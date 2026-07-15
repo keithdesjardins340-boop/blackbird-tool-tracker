@@ -25,9 +25,32 @@
     return t.at_all_time_low ? -999 : 0;
   }
 
+  // ---- offline cache ---------------------------------------------------
+  // Persist the last good snapshot so the checklist opens instantly with zero
+  // signal (remote sites). We render from cache first, then refresh in the
+  // background; if the refresh fails we keep showing the cache with a stale note.
+  function saveCache() {
+    try {
+      localStorage.setItem('bbt_cache', JSON.stringify({
+        at: Date.now(), tools: state.tools, health: state.health, dealers: state.dealers, sparks: state.sparks,
+      }));
+    } catch (e) { /* quota exceeded — fine, cache is best-effort */ }
+  }
+  function loadCache() {
+    try { return JSON.parse(localStorage.getItem('bbt_cache') || 'null'); } catch { return null; }
+  }
+
   // ---- data load -------------------------------------------------------
   async function loadAll() {
-    view.innerHTML = '<div class="loading">Loading…</div>';
+    if (!state.tools.length) {
+      const c = loadCache();
+      if (c && c.tools) {
+        state.tools = c.tools; state.health = c.health || []; state.dealers = c.dealers || []; state.sparks = c.sparks || {};
+        state.lastGoodAt = c.at; render(); // instant paint from cache
+      } else {
+        view.innerHTML = '<div class="loading">Loading…</div>';
+      }
+    }
     try {
       const [tools, health, dealers] = await Promise.all([
         SB.select('tool_market_status', 'select=*'),
@@ -48,9 +71,12 @@
         );
         for (const r of rows || []) (state.sparks[r.listing_id] ||= []).push(Number(r.price_cad));
       }
+      state.offline = false; state.lastGoodAt = Date.now();
+      saveCache();
       render();
     } catch (e) {
-      view.innerHTML = `<div class="empty">Couldn't load data.<br><span class="muted">${esc(e.message)}</span></div>`;
+      if (state.tools.length) { state.offline = true; render(); } // keep the cached view up
+      else view.innerHTML = `<div class="empty">Couldn't load data.<br><span class="muted">${esc(e.message)}</span></div>`;
     }
   }
 
@@ -679,7 +705,19 @@
 
   // ---- routing / tabs --------------------------------------------------
   const RENDERERS = { checklist: renderChecklist, watchlist: renderWatchlist, deals: renderDeals, health: renderHealth, import: renderImport };
+  function updateStaleBar() {
+    const el = document.getElementById('staleBar');
+    if (!el) return;
+    if (state.offline) {
+      const when = state.lastGoodAt ? ` as of ${fmtDate(new Date(state.lastGoodAt).toISOString())}` : '';
+      el.textContent = `⚠ Offline — showing saved prices${when} · reconnect and refresh for live prices`;
+      el.classList.remove('hidden');
+    } else {
+      el.classList.add('hidden');
+    }
+  }
   function render() {
+    updateStaleBar();
     document.getElementById('dealsCount').textContent = state.tools.filter(isDeal).length || '';
     (RENDERERS[state.tab] || renderChecklist)();
   }
@@ -704,8 +742,32 @@
   // older builds — writes now use the revocable writer token, never the admin key.
   try { localStorage.removeItem('bbt_service_key'); } catch (e) { /* ignore */ }
 
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  function showUpdateToast() {
+    if (document.getElementById('updateToast')) return;
+    const t = document.createElement('div');
+    t.id = 'updateToast'; t.className = 'toast';
+    t.innerHTML = 'New version available <button class="btn btn-sm" id="reloadBtn">Reload</button>';
+    document.body.appendChild(t);
+    document.getElementById('reloadBtn').onclick = () => location.reload();
   }
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').then((reg) => {
+        // A new worker finished installing while a page is already controlled →
+        // fresh code is waiting; offer a one-tap reload instead of silently
+        // running week-old JS.
+        reg.addEventListener('updatefound', () => {
+          const nw = reg.installing;
+          if (!nw) return;
+          nw.addEventListener('statechange', () => {
+            if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdateToast();
+          });
+        });
+      }).catch(() => {});
+    });
+  }
+  // Refresh automatically when the network comes back after being offline.
+  window.addEventListener('online', () => { if (state.offline) loadAll(); });
   loadAll();
 })();
