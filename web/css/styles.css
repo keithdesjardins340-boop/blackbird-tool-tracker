@@ -148,5 +148,31 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 14px 12px 40px; }
 .warn { color: var(--amber); font-size: 12px; margin-top: 8px; }
 .note { color: var(--muted); font-size: 13px; }
 .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin: 18px 0 8px; }
+
+/* Checklist (merged tool list + prices) */
+.owned-tag { font-size: 10px; font-weight: 700; color: var(--green); border: 1px solid #17492b; background: #10241a; border-radius: 999px; padding: 1px 6px; vertical-align: middle; }
+.keybar { background: #2a2110; border: 1px solid #4a3a12; color: var(--amber); border-radius: 10px; padding: 10px 12px; font-size: 13px; margin-bottom: 10px; }
+.prog { display: flex; align-items: center; gap: 10px; margin: 4px 0 14px; }
+.prog-bar { flex: 1; height: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.prog-bar span { display: block; height: 100%; background: var(--green); border-radius: 999px; transition: width .3s; }
+.prog-label { font-size: 12px; color: var(--muted); white-space: nowrap; font-weight: 600; }
+.cat-head { display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  font-size: 13px; font-weight: 700; color: var(--text); margin: 16px 0 6px; padding-bottom: 5px; border-bottom: 1px solid var(--line); }
+.cat-count { font-size: 12px; color: var(--muted); font-weight: 600; }
+.check-row { display: flex; align-items: center; gap: 12px; padding: 10px 6px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.check-row:active { background: var(--bg-2); }
+.check-row.owned .cr-name { color: var(--muted); }
+.check-box { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 7px; border: 2px solid var(--line);
+  background: var(--card); color: #06222e; font-weight: 800; font-size: 15px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.check-box.on { background: var(--green); border-color: var(--green); }
+.cr-main { flex: 1; min-width: 0; }
+.cr-name { font-size: 14px; font-weight: 550; }
+.cr-qty { color: var(--muted); font-weight: 700; font-size: 12px; }
+.cr-sub { font-size: 12px; color: var(--muted); margin-top: 1px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cr-price { text-align: right; white-space: nowrap; }
+.cr-price .amount { font-size: 15px; font-weight: 750; }
+.cr-price.na { color: var(--muted); }
+.cr-dealer { display: block; font-size: 11px; color: var(--muted); }
+.own-toggle { margin: 10px 0 4px; }
 .empty { text-align: center; color: var(--muted); padding: 40px 10px; }
 code.inline { background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 12px; }

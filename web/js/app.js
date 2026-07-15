@@ -2,11 +2,11 @@
   const { DEAL_PCT } = window.BBT_CONFIG;
   const view = document.getElementById('view');
   const state = {
-    tab: 'watchlist',
+    tab: 'checklist',
     tools: [],            // tool_market_status rows
     sparks: {},           // listing_id -> [price,...]
     health: [],
-    filters: { tier: '', category: '', brand: '', target: false, q: '' },
+    filters: { category: '', owned: '', priced: '', q: '' },
   };
 
   // ---- helpers ---------------------------------------------------------
@@ -55,12 +55,12 @@
   function applyFilters(list) {
     const f = state.filters;
     return list.filter((t) => {
-      if (f.tier && t.tier !== f.tier) return false;
       if (f.category && t.category !== f.category) return false;
-      if (f.brand && t.brand !== f.brand) return false;
-      if (f.target && !t.at_or_below_target) return false;
+      if (f.owned === 'owned' && !t.owned) return false;
+      if (f.owned === 'need' && t.owned) return false;
+      if (f.priced === 'priced' && t.best_price == null) return false;
       if (f.q) {
-        const hay = `${t.name} ${t.brand || ''} ${t.model_number || ''}`.toLowerCase();
+        const hay = `${t.name} ${t.pn || ''} ${t.model_number || ''}`.toLowerCase();
         if (!hay.includes(f.q.toLowerCase())) return false;
       }
       return true;
@@ -68,30 +68,30 @@
   }
 
   function filtersBar() {
-    const tiers = uniq(state.tools.map((t) => t.tier));
     const cats = uniq(state.tools.map((t) => t.category));
-    const brands = uniq(state.tools.map((t) => t.brand));
     const opt = (v, sel) => `<option value="${esc(v)}"${v === sel ? ' selected' : ''}>${esc(v || 'All')}</option>`;
     const f = state.filters;
     return `<div class="filters">
-      <input type="search" id="fq" placeholder="Search name / model…" value="${esc(f.q)}" />
-      <select id="ftier"><option value="">Tier: All</option>${tiers.map((v) => opt(v, f.tier)).join('')}</select>
+      <input type="search" id="fq" placeholder="Search name / SKU…" value="${esc(f.q)}" />
       <select id="fcat"><option value="">Category: All</option>${cats.map((v) => opt(v, f.category)).join('')}</select>
-      <select id="fbrand"><option value="">Brand: All</option>${brands.map((v) => opt(v, f.brand)).join('')}</select>
-      <label class="chk"><input type="checkbox" id="ftarget" ${f.target ? 'checked' : ''}/> At/below target</label>
+      <select id="fowned">
+        <option value="">Owned: All</option>
+        <option value="owned"${f.owned === 'owned' ? ' selected' : ''}>Have it ✓</option>
+        <option value="need"${f.owned === 'need' ? ' selected' : ''}>Still needed</option>
+      </select>
+      <select id="fpriced">
+        <option value="">Price: All</option>
+        <option value="priced"${f.priced === 'priced' ? ' selected' : ''}>Tracked only</option>
+      </select>
     </div>`;
   }
 
   function wireFilters() {
     const bind = (id, key, ev = 'change') => {
       const el = document.getElementById(id);
-      if (el) el.addEventListener(ev, () => {
-        state.filters[key] = el.type === 'checkbox' ? el.checked : el.value;
-        render();
-      });
+      if (el) el.addEventListener(ev, () => { state.filters[key] = el.value; render(); });
     };
-    bind('fq', 'q', 'input'); bind('ftier', 'tier'); bind('fcat', 'category');
-    bind('fbrand', 'brand'); bind('ftarget', 'target');
+    bind('fq', 'q', 'input'); bind('fcat', 'category'); bind('fowned', 'owned'); bind('fpriced', 'priced');
   }
 
   // ---- card ------------------------------------------------------------
@@ -119,8 +119,8 @@
     return `<div class="card" data-tool="${t.tool_id}">
       <div class="card-top">
         <div>
-          <div class="tool-name">${esc(t.name)}</div>
-          <div class="tool-sub">${esc([t.brand, t.model_number].filter(Boolean).join(' · '))}${t.category ? ' — ' + esc(t.category) : ''}${t.tier ? ' · ' + esc(t.tier) : ''}</div>
+          <div class="tool-name">${esc(t.name)}${t.owned ? ' <span class="owned-tag">✓ have</span>' : ''}</div>
+          <div class="tool-sub">${esc([t.pn || t.model_number].filter(Boolean).join(' · '))}${t.category ? (t.pn || t.model_number ? ' — ' : '') + esc(t.category) : ''}</div>
         </div>
         <div class="price">${priceBlock}</div>
       </div>
@@ -134,6 +134,70 @@
   function cardListHTML(list) {
     if (!list.length) return '<div class="empty">Nothing here yet.</div>';
     return list.map(toolCard).join('');
+  }
+
+  // ---- checklist (merged tool list + prices) ---------------------------
+  function checkRow(t) {
+    const priced = t.best_price != null;
+    const badges = [];
+    if (t.at_all_time_low) badges.push('<span class="badge low">low</span>');
+    else if (isDeal(t)) badges.push('<span class="badge deal">deal</span>');
+    if (t.on_sale) badges.push('<span class="badge sale">sale</span>');
+    if (t.at_or_below_target) badges.push('<span class="badge target">≤ target</span>');
+    const price = priced
+      ? `<div class="cr-price"><span class="amount">${money(t.best_price)}</span><span class="cr-dealer">${esc(t.best_dealer || '')}</span></div>`
+      : `<div class="cr-price na">—</div>`;
+    const qty = t.quantity && t.quantity > 1 ? `<span class="cr-qty">×${t.quantity}</span>` : '';
+    const sub = esc(t.pn || t.model_number || '');
+    return `<div class="check-row${t.owned ? ' owned' : ''}" data-tool="${t.tool_id}">
+      <button class="check-box${t.owned ? ' on' : ''}" data-check="${t.tool_id}" aria-label="Toggle have it">${t.owned ? '✓' : ''}</button>
+      <div class="cr-main">
+        <div class="cr-name">${esc(t.name)} ${qty}</div>
+        <div class="cr-sub">${sub}${badges.length ? ' ' + badges.join('') : ''}</div>
+      </div>
+      ${price}
+    </div>`;
+  }
+
+  function renderChecklist() {
+    const list = applyFilters(state.tools);
+    const byCat = {};
+    for (const t of list) (byCat[t.category || 'Uncategorized'] ||= []).push(t);
+    const cats = Object.keys(byCat).sort();
+    const owned = list.filter((t) => t.owned).length;
+    const pct = list.length ? Math.round((owned / list.length) * 100) : 0;
+    const keyWarn = SB.hasServiceKey() ? ''
+      : '<div class="keybar">Checkmarks are read-only until you add your service key in the <b>Settings</b> tab — that turns on sync.</div>';
+
+    let html = filtersBar() + keyWarn
+      + `<div class="prog"><div class="prog-bar"><span style="width:${pct}%"></span></div>
+           <div class="prog-label">${owned} / ${list.length} have · ${pct}%</div></div>`;
+    for (const c of cats) {
+      const items = byCat[c].sort((a, b) => a.name.localeCompare(b.name));
+      const o = items.filter((t) => t.owned).length;
+      html += `<div class="cat-head">${esc(c)}<span class="cat-count">${o}/${items.length}</span></div>`;
+      html += items.map(checkRow).join('');
+    }
+    view.innerHTML = html;
+    wireFilters();
+  }
+
+  async function toggleOwned(toolId) {
+    if (!SB.hasServiceKey()) {
+      alert('Add your service_role key in the Settings tab to save checkmarks (Supabase → Project Settings → API).');
+      return;
+    }
+    const t = state.tools.find((x) => String(x.tool_id) === String(toolId));
+    if (!t) return;
+    const next = !t.owned;
+    t.owned = next;              // optimistic
+    render();
+    try {
+      await SB.req(`tools?id=eq.${toolId}`, { method: 'PATCH', body: { owned: next }, write: true, prefer: 'return=minimal' });
+    } catch (e) {
+      t.owned = !next; render();
+      alert('Could not save: ' + e.message);
+    }
   }
 
   // ---- views -----------------------------------------------------------
@@ -175,11 +239,11 @@
   function renderImport() {
     const hasKey = SB.hasServiceKey();
     view.innerHTML = `<div class="import-box">
-      <h3>Import tool list (CSV)</h3>
-      <p class="note">Columns are matched flexibly: <code class="inline">item name, brand, model/part number, category, tier, budget price</code>. Re-importing updates existing tools (matched on brand + model).</p>
+      <h3>Settings &amp; CSV import</h3>
+      <p class="note">Your <b>service_role</b> key unlocks two things on this device: <b>saving checkmarks</b> (the ✓ Have-it toggles, synced to Supabase) and <b>CSV import</b>. It's stored only in this browser (localStorage) and never sent anywhere but Supabase. Don't paste it on a shared device.</p>
 
-      <div class="section-title">1 · Write access</div>
-      <p class="note">Writing needs your <b>service_role</b> key (Supabase → Project Settings → API). It's stored only in this browser (localStorage) and never uploaded anywhere but Supabase. Don't paste it on a shared device.</p>
+      <div class="section-title">1 · Service key (enables checkmarks + import)</div>
+      <p class="note">Supabase → Project Settings → API → <code class="inline">service_role</code> (secret) → Reveal → Copy.</p>
       <input type="password" id="svcKey" placeholder="service_role key${hasKey ? ' (saved)' : ''}" />
       <button class="btn secondary" id="saveKey">Save key</button>
       ${hasKey ? '<button class="btn secondary" id="clearKey">Clear</button>' : ''}
@@ -272,7 +336,8 @@
 
       detailBody.innerHTML = `
         <h2>${esc(t?.name || 'Tool')}</h2>
-        <div class="tool-sub">${esc([t?.brand, t?.model_number].filter(Boolean).join(' · '))}${t?.category ? ' — ' + esc(t.category) : ''}${t?.tier ? ' · ' + esc(t.tier) : ''}</div>
+        <div class="tool-sub">${esc([t?.pn || t?.model_number].filter(Boolean).join(' · '))}${t?.category ? (t?.pn || t?.model_number ? ' — ' : '') + esc(t.category) : ''}${t?.quantity && t.quantity > 1 ? ' · qty ' + t.quantity : ''}</div>
+        <button class="btn ${t?.owned ? 'secondary' : ''} own-toggle" id="detailOwn" data-own="${t?.tool_id}">${t?.owned ? '✓ Have it — tap to unmark' : 'Mark as have it'}</button>
         <div class="stat-grid">
           <div class="stat"><div class="v">${money(t?.best_price)}</div><div class="l">best now (${esc(t?.best_dealer || '—')})</div></div>
           <div class="stat"><div class="v">${money(t?.avg_90d)}</div><div class="l">90-day avg</div></div>
@@ -283,6 +348,8 @@
         <div class="section-title">Price history</div>
         <div class="hist-wrap">${chart}<div class="legend">${legend}</div></div>
         <div class="dealer-list">${dealerRows}</div>`;
+      const ob = document.getElementById('detailOwn');
+      if (ob) ob.onclick = async () => { await toggleOwned(ob.dataset.own); openDetail(toolId); };
     } catch (e) {
       detailBody.innerHTML = `<div class="empty">Couldn't load detail.<br><span class="muted">${esc(e.message)}</span></div>`;
     }
@@ -361,10 +428,10 @@
   }
 
   // ---- routing / tabs --------------------------------------------------
-  const RENDERERS = { watchlist: renderWatchlist, deals: renderDeals, health: renderHealth, import: renderImport };
+  const RENDERERS = { checklist: renderChecklist, watchlist: renderWatchlist, deals: renderDeals, health: renderHealth, import: renderImport };
   function render() {
     document.getElementById('dealsCount').textContent = state.tools.filter(isDeal).length || '';
-    (RENDERERS[state.tab] || renderWatchlist)();
+    (RENDERERS[state.tab] || renderChecklist)();
   }
 
   document.getElementById('tabs').addEventListener('click', (e) => {
@@ -374,8 +441,10 @@
     render();
   });
   view.addEventListener('click', (e) => {
-    const card = e.target.closest('.card[data-tool]');
-    if (card) openDetail(card.dataset.tool);
+    const chk = e.target.closest('[data-check]');
+    if (chk) { e.stopPropagation(); toggleOwned(chk.dataset.check); return; }
+    const row = e.target.closest('.card[data-tool], .check-row[data-tool]');
+    if (row) openDetail(row.dataset.tool);
   });
   document.getElementById('refreshBtn').onclick = loadAll;
 
