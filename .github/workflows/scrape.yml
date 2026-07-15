@@ -42,7 +42,9 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
+      # A mapper hiccup must not block pricing — the two steps are independent.
       - name: Auto-map new tools to dealer listings
+        continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -59,3 +61,12 @@ jobs:
           else
             node src/run.js
           fi
+
+      # Always summarize the run (dealer health, snapshot volume, anomalies, deals)
+      # into the Actions run summary — even if a prior step failed.
+      - name: Run report
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node src/report.js >> "$GITHUB_STEP_SUMMARY"
