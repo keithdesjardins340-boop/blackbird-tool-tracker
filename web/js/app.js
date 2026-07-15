@@ -675,6 +675,10 @@
   document.getElementById('addToolBtn').onclick = () => openEditForm(null);
 
   // ---- boot ------------------------------------------------------------
+  // One-time cleanup: purge any stale service_role key left in localStorage by
+  // older builds — writes now use the revocable writer token, never the admin key.
+  try { localStorage.removeItem('bbt_service_key'); } catch (e) { /* ignore */ }
+
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
   }
