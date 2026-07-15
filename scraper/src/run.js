@@ -72,10 +72,16 @@ async function scrapeDealer(dealer) {
     .update({ finished_at: new Date().toISOString(), ok_count: ok, fail_count: fail, error_log: errorLog })
     .eq('id', run.id);
 
-  // Auto-flag a dealer whose every listing failed (and there was something to do).
-  if ((listings?.length || 0) > 0 && ok === 0) {
+  // Health signal only — the runner still retries 'broken' dealers so they can
+  // recover. Flag broken when every listing failed; heal back to active on any
+  // success. Never downgrade a 'beta' dealer.
+  const hadListings = (listings?.length || 0) > 0;
+  if (hadListings && ok === 0 && dealer.scraper_status !== 'beta') {
     await supabase.from('dealers').update({ scraper_status: 'broken' }).eq('id', dealer.id);
-    console.warn(`  ! ${dealer.name} marked 'broken' (0/${listings.length} succeeded)`);
+    console.warn(`  ! ${dealer.name} flagged 'broken' (0/${listings.length} succeeded)`);
+  } else if (ok > 0 && dealer.scraper_status === 'broken') {
+    await supabase.from('dealers').update({ scraper_status: 'active' }).eq('id', dealer.id);
+    console.log(`  ~ ${dealer.name} recovered → active`);
   }
 
   console.log(`  --> ${dealer.name}: ${ok} ok, ${fail} fail`);
@@ -84,8 +90,10 @@ async function scrapeDealer(dealer) {
 async function main() {
   const only = arg('--dealer');
   let q = supabase.from('dealers').select('id, name, scraper_status');
+  // Include 'broken' so a dealer that failed once still gets retried and can
+  // self-heal — otherwise one transient failure disables it forever.
   if (only) q = q.eq('name', only);
-  else q = q.in('scraper_status', ['active', 'beta']);
+  else q = q.in('scraper_status', ['active', 'beta', 'broken']);
 
   const { data: dealers, error } = await q;
   if (error) throw error;
