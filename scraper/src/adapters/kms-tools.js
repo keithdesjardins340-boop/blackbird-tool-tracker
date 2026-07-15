@@ -41,6 +41,7 @@ export default {
     const ld = offerFromProduct(findJsonLdProduct($));
     const price = ld?.price ?? metaPrice($);
     if (price == null) throw new Error(`KMS price not found (${productUrl})`);
+    const parse_via = ld?.price != null ? 'json-ld' : 'meta';
 
     // Hyva shows the pre-sale price as an "old price" when on sale.
     let regular_price = null;
@@ -48,7 +49,7 @@ export default {
     const rp = parsePrice(oldTxt);
     if (rp && rp > price) regular_price = rp;
 
-    return result({ price, regular_price, in_stock: ld?.in_stock ?? null });
+    return result({ price, regular_price, in_stock: ld?.in_stock ?? null, parse_via });
   },
 
   async search(model) {

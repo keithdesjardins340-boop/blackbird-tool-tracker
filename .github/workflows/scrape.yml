@@ -2,7 +2,9 @@ name: Scrape dealer prices
 
 on:
   schedule:
-    # Twice daily, ~08:00 and ~20:00 America/Winnipeg (13:00 & 01:00 UTC).
+    # GitHub cron is UTC and does NOT observe DST, so America/Winnipeg times drift
+    # 1h seasonally (accepted): 13:00 UTC = 08:00 CDT (summer) / 07:00 CST (winter);
+    # 01:00 UTC = 20:00 CDT (summer) / 19:00 CST (winter). Twice daily is plenty.
     - cron: '0 13 * * *'
     - cron: '0 1 * * *'
   workflow_dispatch:

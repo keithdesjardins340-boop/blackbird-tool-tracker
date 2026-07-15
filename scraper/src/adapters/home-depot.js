@@ -51,6 +51,6 @@ export default {
     const m = productUrl.match(/\/(\d{6,})(?:[/?#]|$)/);
     const { price, regular_price, in_stock } = extractPrice(html, m ? m[1] : null);
     if (price == null) throw new Error(`HD price not found (page structure changed or blocked): ${productUrl}`);
-    return result({ price, regular_price, in_stock });
+    return result({ price, regular_price, in_stock, parse_via: 'json-embed' });
   },
 };

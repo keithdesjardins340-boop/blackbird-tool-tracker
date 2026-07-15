@@ -35,9 +35,10 @@ const genericManual = {
     const ld = offerFromProduct(findJsonLdProduct($));
     let price = ld?.price ?? null;
     let in_stock = ld?.in_stock ?? null;
+    let parse_via = price != null ? 'json-ld' : null;
 
-    if (price == null) price = metaPrice($);
-    if (price == null) price = priceFromMarkup($);
+    if (price == null) { const m = metaPrice($); if (m != null) { price = m; parse_via = 'meta'; } }
+    if (price == null) { const k = priceFromMarkup($); if (k != null) { price = k; parse_via = 'markup'; } }
     if (price == null) throw new Error(`price not found (manual link) ${productUrl}`);
 
     if (in_stock == null) {
@@ -45,7 +46,7 @@ const genericManual = {
       if (/out of stock|sold out|unavailable|discontinued|back ?order/.test(txt)) in_stock = false;
       else if (/add to cart|in stock|available|buy now/.test(txt)) in_stock = true;
     }
-    return result({ price, in_stock });
+    return result({ price, in_stock, parse_via });
   },
 };
 

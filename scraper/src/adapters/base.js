@@ -107,11 +107,12 @@ export function metaPrice($) {
   return null;
 }
 
-/** Standard result shape, with nulls for anything we couldn't read. */
-export function result({ price = null, regular_price = null, on_sale = null, in_stock = null } = {}) {
+/** Standard result shape, with nulls for anything we couldn't read. parse_via
+ * records which extraction strategy produced the price (for diagnostics). */
+export function result({ price = null, regular_price = null, on_sale = null, in_stock = null, parse_via = null } = {}) {
   // Infer on_sale when we have both prices and no explicit flag.
   if (on_sale == null && price != null && regular_price != null) {
     on_sale = price < regular_price;
   }
-  return { price, regular_price, on_sale, in_stock };
+  return { price, regular_price, on_sale, in_stock, parse_via };
 }

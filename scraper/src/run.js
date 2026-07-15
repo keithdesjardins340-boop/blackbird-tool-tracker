@@ -73,6 +73,7 @@ async function scrapeDealer(dealer) {
         on_sale: res.on_sale,
         in_stock: res.in_stock,
         is_anomaly: anomaly,
+        parse_via: res.parse_via ?? null,
       });
       if (sErr) throw sErr;
       ok++;
