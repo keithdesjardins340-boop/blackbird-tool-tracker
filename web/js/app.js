@@ -109,6 +109,7 @@
     if (isDeal(t) && !t.at_all_time_low) badges.push('<span class="badge deal">deal</span>');
     if (t.on_sale) badges.push('<span class="badge sale">on sale</span>');
     if (t.in_stock === false) badges.push('<span class="badge oos">out of stock</span>');
+    if (t.best_source === 'auto-desc') badges.push('<span class="verify-tag">≈ verify</span>');
 
     let delta = '<span class="delta flat">—</span>';
     if (t.pct_vs_avg_90d != null) {
@@ -150,6 +151,7 @@
     else if (isDeal(t)) badges.push('<span class="badge deal">deal</span>');
     if (t.on_sale) badges.push('<span class="badge sale">sale</span>');
     if (t.at_or_below_target) badges.push('<span class="badge target">≤ target</span>');
+    if (t.best_source === 'auto-desc') badges.push('<span class="verify-tag">≈ verify</span>');
     const price = priced
       ? `<div class="cr-price"><span class="amount">${money(t.best_price)}</span><span class="cr-dealer">${esc(t.best_dealer || '')}</span></div>`
       : `<div class="cr-price na">—</div>`;
@@ -343,7 +345,7 @@
     detailBody.innerHTML = '<div class="loading">Loading history…</div>';
     try {
       const listings = await SB.select('tool_listings',
-        `select=id,product_url,sku,active,dealer:dealers(name)&tool_id=eq.${toolId}`);
+        `select=id,product_url,sku,active,source,match_score,dealer:dealers(name)&tool_id=eq.${toolId}`);
       const ids = (listings || []).map((l) => l.id);
       let snaps = [];
       if (ids.length) {
@@ -352,6 +354,15 @@
       }
       const byListing = {};
       for (const s of snaps) (byListing[s.listing_id] ||= []).push(s);
+
+      // Suggested (unconfirmed) matches from the description search — one tap to accept.
+      const activeUrls = new Set((listings || []).filter((l) => l.active).map((l) => l.product_url));
+      let cands = [];
+      try {
+        cands = await SB.select('map_candidates',
+          `select=id,url,title,dealer_id,dealer:dealers(name)&tool_id=eq.${toolId}&confident=is.false&order=created_at.desc`) || [];
+      } catch { cands = []; }
+      cands = cands.filter((c) => !activeUrls.has(c.url)).slice(0, 6);
 
       const series = (listings || []).map((l) => ({
         label: l.dealer?.name || `Listing ${l.id}`,
@@ -376,7 +387,7 @@
         const oos = last && last.in_stock === false;
         return `<div class="dealer-row${l.id === bestId ? ' best' : ''}">
           <div>
-            <b>${esc(l.dealer?.name || '')}</b>${l.id === bestId ? ' <span class="best-tag">BEST</span>' : ''}${oos ? ' <span class="badge oos">OOS</span>' : ''}
+            <b>${esc(l.dealer?.name || '')}</b>${l.id === bestId ? ' <span class="best-tag">BEST</span>' : ''}${l.source === 'auto-desc' ? ' <span class="verify-tag" title="Auto-matched by description — open it to confirm it\'s the right product">≈ verify</span>' : ''}${oos ? ' <span class="badge oos">OOS</span>' : ''}
             <div class="tool-sub">${last ? money(last.price_cad) + ' · ' + fmtDate(last.scraped_at) : 'no price yet — will scrape next run'}</div>
           </div>
           <div class="dealer-actions">
@@ -399,6 +410,21 @@
         </div>
         <div id="alMsg" class="note"></div>`;
 
+      // Description-matched suggestions the user can accept with one tap.
+      const suggestionsHTML = cands.length ? `
+        <div class="section-title">Suggested matches — found by description</div>
+        <div class="note" style="margin:-2px 0 8px">Auto-found by name (not confirmed). Open to check it's the right product, then tap Use.</div>
+        ${cands.map((c) => `<div class="dealer-row">
+          <div>
+            <b>${esc(c.dealer?.name || '')}</b>
+            <div class="tool-sub">${esc((c.title || '(no title)').slice(0, 90))}</div>
+          </div>
+          <div class="dealer-actions">
+            <a href="${esc(c.url)}" target="_blank" rel="noopener">Open ↗</a>
+            <button class="btn secondary btn-sm" data-use-cand="${c.id}" data-dealer="${c.dealer_id}" data-url="${esc(c.url)}">Use</button>
+          </div>
+        </div>`).join('')}` : '';
+
       detailBody.innerHTML = `
         <div class="detail-head">
           <h2>${esc(t?.name || 'Tool')}</h2>
@@ -416,6 +442,7 @@
         <div class="section-title">Price history</div>
         <div class="hist-wrap">${chart}<div class="legend">${legend}</div></div>
         <div class="dealer-list">${dealerRows}</div>
+        ${suggestionsHTML}
         ${addForm}`;
 
       const ob = document.getElementById('detailOwn');
@@ -427,6 +454,9 @@
       });
       const alAdd = document.getElementById('alAdd');
       if (alAdd) alAdd.onclick = () => addListing(toolId);
+      detailBody.querySelectorAll('[data-use-cand]').forEach((btn) => {
+        btn.onclick = () => useCandidate(toolId, btn.dataset.dealer, btn.dataset.url, btn.dataset.useCand);
+      });
     } catch (e) {
       detailBody.innerHTML = `<div class="empty">Couldn't load detail.<br><span class="muted">${esc(e.message)}</span></div>`;
     }
@@ -538,12 +568,28 @@
     try {
       await SB.req('tool_listings', {
         method: 'POST',
-        body: [{ tool_id: Number(toolId), dealer_id: Number(sel.value), product_url: url, active: true }],
+        body: [{ tool_id: Number(toolId), dealer_id: Number(sel.value), product_url: url, active: true, source: 'manual' }],
         write: true, prefer: 'return=minimal',
       });
       openDetail(toolId); // refresh the dealer list; price lands on next scrape
     } catch (e) {
       msg.textContent = /duplicate|unique/i.test(e.message) ? 'That link is already saved for this dealer.' : 'Add failed: ' + e.message;
+    }
+  }
+
+  // Promote a description-search suggestion to a tracked listing (user-approved).
+  async function useCandidate(toolId, dealerId, url, candId) {
+    if (!ensureKey()) return;
+    try {
+      await SB.req('tool_listings', {
+        method: 'POST',
+        body: [{ tool_id: Number(toolId), dealer_id: Number(dealerId), product_url: url, active: true, source: 'manual' }],
+        write: true, prefer: 'return=minimal',
+      });
+      if (candId) await SB.req(`map_candidates?id=eq.${candId}`, { method: 'PATCH', body: { confident: true }, write: true, prefer: 'return=minimal' });
+      openDetail(toolId); // price lands on next scrape
+    } catch (e) {
+      alert(/duplicate|unique/i.test(e.message) ? 'That link is already tracked for this dealer.' : 'Could not add: ' + e.message);
     }
   }
 

@@ -1,9 +1,11 @@
 // Dependency-free SVG charts: sparkline (watchlist) + multi-series line chart
 // (tool detail). All inline SVG so it works offline with no libraries.
 (function () {
-  const COLORS = ['#38bdf8', '#22c55e', '#f59e0b', '#c4b5fd', '#ef4444', '#2dd4bf'];
+  // Monochrome ramp — dealers are distinguished by shade (and dash, below).
+  const COLORS = ['#09090b', '#71717a', '#a1a1aa', '#3f3f46', '#52525b', '#d4d4d8'];
+  const DASHES = ['', '', '5,3', '2,3', '8,3', '2,2'];
 
-  function sparkline(values, { w = 96, h = 28, stroke = '#38bdf8' } = {}) {
+  function sparkline(values, { w = 96, h = 28, stroke = '#09090b' } = {}) {
     const pts = values.filter((v) => v != null);
     if (pts.length === 0) return `<svg class="spark" width="${w}" height="${h}"></svg>`;
     if (pts.length === 1) {
@@ -42,24 +44,25 @@
     for (let i = 0; i <= yTicks; i++) {
       const p = minP + (i / yTicks) * (maxP - minP);
       const y = Y(p);
-      grid += `<line x1="${pad.l}" y1="${y.toFixed(1)}" x2="${w - pad.r}" y2="${y.toFixed(1)}" stroke="#2a333f" stroke-width="1"/>
-        <text x="${pad.l - 6}" y="${(y + 3).toFixed(1)}" fill="#8b98a8" font-size="10" text-anchor="end">$${p.toFixed(0)}</text>`;
+      grid += `<line x1="${pad.l}" y1="${y.toFixed(1)}" x2="${w - pad.r}" y2="${y.toFixed(1)}" stroke="#e4e4e7" stroke-width="1"/>
+        <text x="${pad.l - 6}" y="${(y + 3).toFixed(1)}" fill="#71717a" font-size="10" text-anchor="end">$${p.toFixed(0)}</text>`;
     }
     for (let i = 0; i <= xTicks; i++) {
       const t = minT + (i / xTicks) * (maxT - minT);
       const x = X(t);
       const d = new Date(t);
       const lbl = `${d.getMonth() + 1}/${d.getDate()}`;
-      grid += `<text x="${x.toFixed(1)}" y="${h - 8}" fill="#8b98a8" font-size="10" text-anchor="middle">${lbl}</text>`;
+      grid += `<text x="${x.toFixed(1)}" y="${h - 8}" fill="#71717a" font-size="10" text-anchor="middle">${lbl}</text>`;
     }
 
     const paths = series.map((s, i) => {
       const color = COLORS[i % COLORS.length];
+      const dash = DASHES[i % DASHES.length];
       const ps = s.points.filter((p) => p.price != null).sort((a, b) => +new Date(a.t) - +new Date(b.t));
       if (!ps.length) return '';
       const d = ps.map((p, j) => `${j === 0 ? 'M' : 'L'}${X(p.t).toFixed(1)},${Y(p.price).toFixed(1)}`).join(' ');
       const dots = ps.map((p) => `<circle cx="${X(p.t).toFixed(1)}" cy="${Y(p.price).toFixed(1)}" r="2" fill="${color}"/>`).join('');
-      return `<path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>${dots}`;
+      return `<path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"${dash ? ` stroke-dasharray="${dash}"` : ''}/>${dots}`;
     }).join('');
 
     return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img">${grid}${paths}</svg>`;
