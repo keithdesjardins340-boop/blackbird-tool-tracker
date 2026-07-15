@@ -17,6 +17,25 @@ function arg(name) {
   return i >= 0 ? process.argv[i + 1] : null;
 }
 
+// Guard against a bad parse poisoning the stats: flag a price that's non-positive
+// or wildly off the listing's recent (clean) median. Flagged snapshots are still
+// recorded but excluded from every stats view. Needs >=3 points of history to
+// judge, so genuine early price moves aren't mistaken for errors.
+async function isAnomaly(listingId, price) {
+  if (price == null || price <= 0) return true;
+  const { data } = await supabase
+    .from('price_snapshots')
+    .select('price_cad')
+    .eq('listing_id', listingId)
+    .eq('is_anomaly', false)
+    .order('scraped_at', { ascending: false })
+    .limit(5);
+  const prices = (data || []).map((r) => Number(r.price_cad)).filter((n) => n > 0).sort((a, b) => a - b);
+  if (prices.length < 3) return false;
+  const median = prices[Math.floor(prices.length / 2)];
+  return median > 0 && (price > median * 5 || price < median * 0.2);
+}
+
 async function scrapeDealer(dealer) {
   // Falls back to the generic manual-link adapter for any dealer without a
   // dedicated one, so pasted links from arbitrary sites still get priced.
@@ -46,16 +65,18 @@ async function scrapeDealer(dealer) {
   for (const listing of listings || []) {
     try {
       const res = await adapter.scrape(listing.product_url);
+      const anomaly = await isAnomaly(listing.id, res.price);
       const { error: sErr } = await supabase.from('price_snapshots').insert({
         listing_id: listing.id,
         price_cad: res.price,
         regular_price_cad: res.regular_price,
         on_sale: res.on_sale,
         in_stock: res.in_stock,
+        is_anomaly: anomaly,
       });
       if (sErr) throw sErr;
       ok++;
-      console.log(`  ok  listing ${listing.id}  $${res.price}${res.on_sale ? ' (sale)' : ''}`);
+      console.log(`  ok  listing ${listing.id}  $${res.price}${res.on_sale ? ' (sale)' : ''}${anomaly ? '  !! ANOMALY (excluded from stats)' : ''}`);
     } catch (err) {
       fail++;
       const entry = { listing_id: listing.id, url: listing.product_url, error: String(err?.message || err) };
