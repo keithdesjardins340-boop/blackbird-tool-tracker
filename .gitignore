@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.local
+*.log
+dist/
+.DS_Store
+scraper/playwright-report/
+scraper/.cache/
+web/js/config.local.js

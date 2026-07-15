@@ -1,0 +1,48 @@
+name: Scrape dealer prices
+
+on:
+  schedule:
+    # Twice daily, ~08:00 and ~20:00 America/Winnipeg (13:00 & 01:00 UTC).
+    - cron: '0 13 * * *'
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+    inputs:
+      dealer:
+        description: 'Optional: scrape a single dealer by exact name'
+        required: false
+        default: ''
+
+concurrency:
+  group: scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: scraper
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run scrapers
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -n "${{ github.event.inputs.dealer }}" ]; then
+            node src/run.js --dealer "${{ github.event.inputs.dealer }}"
+          else
+            node src/run.js
+          fi
