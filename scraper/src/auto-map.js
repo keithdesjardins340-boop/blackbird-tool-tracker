@@ -133,7 +133,7 @@ async function main() {
       if (chosen) {
         const listingUrl = normalizeUrl(chosen.url);
         await supabase.from('tool_listings').upsert(
-          { tool_id: tool.id, dealer_id: dealer.id, product_url: listingUrl, sku: chosenSku, active: true, source, match_score: matchScore },
+          { tool_id: tool.id, dealer_id: dealer.id, product_url: listingUrl, sku: chosenSku, active: true, source, match_score: matchScore, mpn: chosen.mpn || null },
           { onConflict: 'dealer_id,product_url' });
         await supabase.from('map_candidates').upsert(
           { tool_id: tool.id, dealer_id: dealer.id, sku: chosenSku, url: listingUrl, title: chosen.title, confident: source === 'auto-sku' },

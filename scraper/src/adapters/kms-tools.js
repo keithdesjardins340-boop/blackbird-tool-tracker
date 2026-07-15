@@ -27,6 +27,9 @@ export async function searchSpring(query, limit = 8) {
       price: parsePrice(r.price),
       regular_price: parsePrice(r.msrp) || null,
       sku: r.sku || r.mfr_part_number || '',
+      // Manufacturer part number, for harvesting onto no-PN tools (KMS JSON-LD is
+      // JS-injected so scrape-time mpn extraction misses it — grab it here).
+      mpn: r.mfr_part_number || r.sku || null,
     }))
     .filter((r) => r.url);
 }

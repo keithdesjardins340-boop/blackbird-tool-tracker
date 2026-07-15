@@ -47,7 +47,10 @@ export default {
   // via the link finder, then this adapter keeps them priced.
 
   async scrape(productUrl) {
-    const html = await fetchText(productUrl, { timeoutMs: 30000 });
+    // Fail fast on HD's Akamai-blocked/timing-out listings: one retry, shorter
+    // timeout. A 403 is already non-retryable; this caps dead listings at ~2×18s
+    // instead of ~3×30s+backoff, so a handful of blocked URLs don't drag the run.
+    const html = await fetchText(productUrl, { timeoutMs: 18000, retries: 1 });
     const m = productUrl.match(/\/(\d{6,})(?:[/?#]|$)/);
     const { price, regular_price, in_stock } = extractPrice(html, m ? m[1] : null);
     if (price == null) throw new Error(`HD price not found (page structure changed or blocked): ${productUrl}`);
