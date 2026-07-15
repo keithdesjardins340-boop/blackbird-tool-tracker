@@ -188,3 +188,33 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 14px 12px 40px; }
 .own-toggle { margin: 10px 0 4px; }
 .empty { text-align: center; color: var(--muted); padding: 40px 10px; }
 code.inline { background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 12px; }
+
+/* Header actions */
+.topbar-actions { display: flex; gap: 8px; }
+
+/* Detail: edit button + best dealer + manual links */
+.detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.detail-head h2 { margin: 4px 0 2px; }
+.btn-sm { padding: 6px 12px; font-size: 13px; }
+.btn.danger { background: #2a1010; color: var(--red); border: 1px solid #4a1717; }
+.dealer-row.best { border-color: #17492b; background: #10241a; }
+.best-tag { font-size: 10px; font-weight: 800; color: var(--green); border: 1px solid #17492b; background: #0e1f16; border-radius: 999px; padding: 1px 6px; vertical-align: middle; }
+.dealer-actions { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+.link-x { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 8px; width: 28px; height: 28px; cursor: pointer; font-size: 13px; }
+.link-x:active { transform: scale(.94); }
+.add-link { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.add-link select, .add-link input {
+  background: var(--card); color: var(--text); border: 1px solid var(--line);
+  border-radius: 10px; padding: 9px 10px; font-size: 13px;
+}
+.add-link input[type=url] { flex: 1; min-width: 180px; }
+
+/* Tool edit form */
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 8px 0 14px; }
+.form-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.form-grid label.full { grid-column: 1 / -1; }
+.form-grid input, .form-grid textarea {
+  background: var(--card); color: var(--text); border: 1px solid var(--line);
+  border-radius: 10px; padding: 9px 10px; font-size: 14px; font-family: inherit;
+}
+.form-actions { display: flex; gap: 8px; flex-wrap: wrap; }

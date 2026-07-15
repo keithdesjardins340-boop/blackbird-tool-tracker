@@ -51,7 +51,7 @@ async function main() {
   if (!mapDealers.length) { console.log('No auto-map-enabled dealers.'); return; }
 
   const { data: tools } = await supabase
-    .from('tools').select('id,name,model_number')
+    .from('tools').select('id,name,model_number,pn')
     .is('auto_map_state', null).order('tier').limit(LIMIT);
   if (!tools?.length) { console.log('No unmapped tools left to process.'); return; }
 
@@ -64,7 +64,10 @@ async function main() {
   let mapped = 0, review = 0, noSku = 0;
 
   for (const tool of tools) {
-    const skus = extractSkus(tool.model_number);
+    // Prefer the clean v2 part number; fall back to the messy model_number text.
+    const skuSource = tool.pn && tool.pn.trim() && tool.pn.trim() !== 'VERIFY'
+      ? tool.pn : tool.model_number;
+    const skus = extractSkus(skuSource);
     if (!skus.length) {
       await supabase.from('tools').update({ auto_map_state: 'no_sku' }).eq('id', tool.id);
       noSku++;

@@ -8,7 +8,7 @@
 //   node src/run.js --dealer "KMS Tools" # single dealer
 
 import { supabase } from './supabase.js';
-import { getAdapter } from './adapters/index.js';
+import { getScrapeAdapter } from './adapters/index.js';
 import { randomDelay } from './util/http.js';
 import { closeBrowser } from './util/browser.js';
 
@@ -18,11 +18,9 @@ function arg(name) {
 }
 
 async function scrapeDealer(dealer) {
-  const adapter = getAdapter(dealer.name);
-  if (!adapter) {
-    console.warn(`! No adapter for dealer "${dealer.name}" — skipping.`);
-    return;
-  }
+  // Falls back to the generic manual-link adapter for any dealer without a
+  // dedicated one, so pasted links from arbitrary sites still get priced.
+  const adapter = getScrapeAdapter(dealer.name);
 
   const { data: listings, error: lErr } = await supabase
     .from('tool_listings')
