@@ -9,6 +9,7 @@
     "scrape": "node src/run.js",
     "scrape:dealer": "node src/run.js --dealer",
     "link-finder": "node src/link-finder.js",
+    "auto-map": "node src/auto-map.js",
     "import-csv": "node src/import-csv.js"
   },
   "dependencies": {
