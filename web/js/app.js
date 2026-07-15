@@ -345,7 +345,7 @@
     detailBody.innerHTML = '<div class="loading">Loading history…</div>';
     try {
       const listings = await SB.select('tool_listings',
-        `select=id,product_url,sku,active,source,match_score,dealer:dealers(name)&tool_id=eq.${toolId}`);
+        `select=id,product_url,sku,active,source,match_score,mpn,dealer:dealers(name)&tool_id=eq.${toolId}`);
       const ids = (listings || []).map((l) => l.id);
       let snaps = [];
       if (ids.length) {
@@ -397,6 +397,16 @@
         </div>`;
       }).join('') || '<div class="note">No dealer links yet. Paste one below (or the scraper will map it automatically if it has a part number).</div>';
 
+      // PN harvester: if this tool has no part number but a dealer page exposed
+      // one, offer to set it in one tap (re-arms the SKU auto-mapper).
+      const harvested = (!t?.pn || t.pn === 'VERIFY')
+        ? (rows.map((r) => r.l).find((l) => l.mpn) || null) : null;
+      const pnBanner = harvested ? `
+        <div class="keybar" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <span>Found a part #: <b>${esc(harvested.mpn)}</b> <span class="muted">(${esc(harvested.dealer?.name || '')})</span></span>
+          <button class="btn btn-sm" id="setPnBtn" data-tool="${toolId}" data-pn="${esc(harvested.mpn)}">Set part #</button>
+        </div>` : '';
+
       // Manual-link form: dealer picker + URL. Known dealers use their own
       // scraper; "Other" prices any site via the generic fallback.
       const dealerOpts = state.dealers.map((d) =>
@@ -432,6 +442,7 @@
         </div>
         <div class="tool-sub">${esc([t?.pn || t?.model_number].filter(Boolean).join(' · '))}${t?.category ? (t?.pn || t?.model_number ? ' — ' : '') + esc(t.category) : ''}${t?.quantity && t.quantity > 1 ? ' · qty ' + t.quantity : ''}</div>
         <button class="btn ${t?.owned ? 'secondary' : ''} own-toggle" id="detailOwn" data-own="${t?.tool_id}">${t?.owned ? '✓ Have it — tap to unmark' : 'Mark as have it'}</button>
+        ${pnBanner}
         <div class="stat-grid">
           <div class="stat"><div class="v">${money(t?.best_price)}</div><div class="l">best now (${esc(t?.best_dealer || '—')})</div></div>
           <div class="stat"><div class="v">${money(t?.avg_90d)}</div><div class="l">90-day avg</div></div>
@@ -449,6 +460,8 @@
       if (ob) ob.onclick = async () => { await toggleOwned(ob.dataset.own); openDetail(toolId); };
       const eb = document.getElementById('detailEdit');
       if (eb) eb.onclick = () => openEditForm(eb.dataset.edit);
+      const pb = document.getElementById('setPnBtn');
+      if (pb) pb.onclick = () => setToolPn(pb.dataset.tool, pb.dataset.pn);
       detailBody.querySelectorAll('[data-remove-listing]').forEach((btn) => {
         btn.onclick = () => removeListing(btn.dataset.removeListing, toolId);
       });
@@ -579,6 +592,18 @@
       openDetail(toolId); // price lands on next scrape
     } catch (e) {
       alert(/duplicate|unique/i.test(e.message) ? 'That link is already tracked for this dealer.' : 'Could not add: ' + e.message);
+    }
+  }
+
+  // Accept a harvested part number: set pn + model_number and re-arm the mapper.
+  async function setToolPn(toolId, pn) {
+    if (!ensureKey()) return;
+    try {
+      await SB.writeApi('update_tool', { id: toolId, fields: { pn, model_number: pn }, remap: true });
+      await loadAll();
+      openDetail(toolId);
+    } catch (e) {
+      alert('Could not set part #: ' + e.message);
     }
   }
 

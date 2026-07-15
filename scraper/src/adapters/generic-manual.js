@@ -6,7 +6,7 @@
 //
 // No search()/autoMap — manual links are seeded by the user, not discovered.
 
-import { makeLoader, parsePrice, findJsonLdProduct, offerFromProduct, metaPrice, result } from './base.js';
+import { makeLoader, parsePrice, findJsonLdProduct, offerFromProduct, metaPrice, result, mpnFromProduct } from './base.js';
 
 const CURRENCY_RE = /\$\s?([\d]{1,3}(?:,\d{3})*(?:\.\d{2})|\d+\.\d{2})/;
 
@@ -32,7 +32,8 @@ const genericManual = {
   async scrape(productUrl) {
     const $ = await makeLoader({ needsJs: false })(productUrl);
 
-    const ld = offerFromProduct(findJsonLdProduct($));
+    const product = findJsonLdProduct($);
+    const ld = offerFromProduct(product);
     let price = ld?.price ?? null;
     let in_stock = ld?.in_stock ?? null;
     let parse_via = price != null ? 'json-ld' : null;
@@ -46,7 +47,7 @@ const genericManual = {
       if (/out of stock|sold out|unavailable|discontinued|back ?order/.test(txt)) in_stock = false;
       else if (/add to cart|in stock|available|buy now/.test(txt)) in_stock = true;
     }
-    return result({ price, in_stock, parse_via });
+    return result({ price, in_stock, parse_via, mpn: mpnFromProduct(product) });
   },
 };
 

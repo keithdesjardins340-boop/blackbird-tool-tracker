@@ -89,6 +89,15 @@ export function offerFromProduct(product) {
   return { price, in_stock };
 }
 
+/** Manufacturer part number from a JSON-LD Product node (mpn/sku/gtin). */
+export function mpnFromProduct(product) {
+  if (!product) return null;
+  const raw = product.mpn || product.sku || product.gtin13 || product.gtin12 || product.gtin || null;
+  if (!raw) return null;
+  const s = String(Array.isArray(raw) ? raw[0] : raw).trim();
+  return s && s.length <= 40 ? s : null;
+}
+
 /** Meta-tag price fallback (og:price / product:price / itemprop). */
 export function metaPrice($) {
   const sel = [
@@ -109,10 +118,10 @@ export function metaPrice($) {
 
 /** Standard result shape, with nulls for anything we couldn't read. parse_via
  * records which extraction strategy produced the price (for diagnostics). */
-export function result({ price = null, regular_price = null, on_sale = null, in_stock = null, parse_via = null } = {}) {
+export function result({ price = null, regular_price = null, on_sale = null, in_stock = null, parse_via = null, mpn = null } = {}) {
   // Infer on_sale when we have both prices and no explicit flag.
   if (on_sale == null && price != null && regular_price != null) {
     on_sale = price < regular_price;
   }
-  return { price, regular_price, on_sale, in_stock, parse_via };
+  return { price, regular_price, on_sale, in_stock, parse_via, mpn };
 }

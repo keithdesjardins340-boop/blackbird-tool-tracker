@@ -6,7 +6,7 @@
 //   KMS uses SearchSpring for search, whose JSON API is open and returns
 //   name/url/price/sku directly. That makes SKU-based auto-mapping reliable.
 
-import { makeLoader, findJsonLdProduct, offerFromProduct, metaPrice, result, parsePrice } from './base.js';
+import { makeLoader, findJsonLdProduct, offerFromProduct, metaPrice, result, parsePrice, mpnFromProduct } from './base.js';
 import { fetchText } from '../util/http.js';
 
 const SS_SITE = 'skg4w4'; // KMS SearchSpring siteId (from snapui.searchspring.io/skg4w4/bundle.js)
@@ -38,7 +38,8 @@ export default {
 
   async scrape(productUrl) {
     const $ = await makeLoader({ needsJs: false })(productUrl);
-    const ld = offerFromProduct(findJsonLdProduct($));
+    const product = findJsonLdProduct($);
+    const ld = offerFromProduct(product);
     const price = ld?.price ?? metaPrice($);
     if (price == null) throw new Error(`KMS price not found (${productUrl})`);
     const parse_via = ld?.price != null ? 'json-ld' : 'meta';
@@ -49,7 +50,7 @@ export default {
     const rp = parsePrice(oldTxt);
     if (rp && rp > price) regular_price = rp;
 
-    return result({ price, regular_price, in_stock: ld?.in_stock ?? null, parse_via });
+    return result({ price, regular_price, in_stock: ld?.in_stock ?? null, parse_via, mpn: mpnFromProduct(product) });
   },
 
   async search(model) {

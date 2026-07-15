@@ -43,7 +43,7 @@ async function scrapeDealer(dealer) {
 
   const { data: listings, error: lErr } = await supabase
     .from('tool_listings')
-    .select('id, product_url, tool_id')
+    .select('id, product_url, tool_id, mpn')
     .eq('dealer_id', dealer.id)
     .eq('active', true);
   if (lErr) throw lErr;
@@ -76,6 +76,11 @@ async function scrapeDealer(dealer) {
         parse_via: res.parse_via ?? null,
       });
       if (sErr) throw sErr;
+      // Harvest the manufacturer part number off the page (for the app's
+      // one-tap "Set part #" on tools that still have no PN).
+      if (res.mpn && res.mpn !== listing.mpn) {
+        await supabase.from('tool_listings').update({ mpn: res.mpn }).eq('id', listing.id);
+      }
       ok++;
       console.log(`  ok  listing ${listing.id}  $${res.price}${res.on_sale ? ' (sale)' : ''}${anomaly ? '  !! ANOMALY (excluded from stats)' : ''}`);
     } catch (err) {
