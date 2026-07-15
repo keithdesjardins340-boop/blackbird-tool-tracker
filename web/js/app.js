@@ -195,8 +195,8 @@
 
   function renderChecklist() {
     const list = applyFilters(state.tools);
-    const keyWarn = SB.hasServiceKey() ? ''
-      : '<div class="keybar">Checkmarks are read-only until you add your service key in the <b>Settings</b> tab — that turns on sync.</div>';
+    const keyWarn = SB.hasWriterToken() ? ''
+      : '<div class="keybar">Checkmarks are read-only until you add your access token in the <b>Settings</b> tab — that turns on sync.</div>';
     let html = filtersBar() + keyWarn
       + progressBar(list.filter((t) => t.owned).length, list.length);
 
@@ -224,8 +224,8 @@
   }
 
   async function toggleOwned(toolId) {
-    if (!SB.hasServiceKey()) {
-      alert('Add your service_role key in the Settings tab to save checkmarks (Supabase → Project Settings → API).');
+    if (!SB.hasWriterToken()) {
+      alert('Add your access token in the Settings tab to save checkmarks.');
       return;
     }
     const t = state.tools.find((x) => String(x.tool_id) === String(toolId));
@@ -234,7 +234,7 @@
     t.owned = next;              // optimistic
     render();
     try {
-      await SB.req(`tools?id=eq.${toolId}`, { method: 'PATCH', body: { owned: next }, write: true, prefer: 'return=minimal' });
+      await SB.writeApi('toggle_owned', { id: toolId, owned: next });
     } catch (e) {
       t.owned = !next; render();
       alert('Could not save: ' + e.message);
@@ -278,17 +278,17 @@
   }
 
   function renderImport() {
-    const hasKey = SB.hasServiceKey();
+    const hasKey = SB.hasWriterToken();
     view.innerHTML = `<div class="import-box">
       <h3>Settings &amp; CSV import</h3>
-      <p class="note">Your <b>service_role</b> key unlocks two things on this device: <b>saving checkmarks</b> (the ✓ Have-it toggles, synced to Supabase) and <b>CSV import</b>. It's stored only in this browser (localStorage) and never sent anywhere but Supabase. Don't paste it on a shared device.</p>
+      <p class="note">Editing is protected by an <b>access token</b> — a revocable password that lets this device save changes (checkmarks, edits, links, CSV import) without ever holding the database admin key. It's stored only in this browser (localStorage). Don't paste it on a shared device.</p>
 
-      <div class="section-title">1 · Service key (enables checkmarks + import)</div>
-      <p class="note">Supabase → Project Settings → API → <code class="inline">service_role</code> (secret) → Reveal → Copy.</p>
-      <input type="password" id="svcKey" placeholder="service_role key${hasKey ? ' (saved)' : ''}" />
-      <button class="btn secondary" id="saveKey">Save key</button>
+      <div class="section-title">1 · Access token (enables saving)</div>
+      <p class="note">Get it from your Supabase SQL editor: <code class="inline">select value from app_secrets where key = 'writer_token';</code> — copy the value and paste it below. (To revoke, rotate that value in Supabase.)</p>
+      <input type="password" id="svcKey" placeholder="access token${hasKey ? ' (saved)' : ''}" />
+      <button class="btn secondary" id="saveKey">Save token</button>
       ${hasKey ? '<button class="btn secondary" id="clearKey">Clear</button>' : ''}
-      <p class="warn">${hasKey ? '✓ Service key saved on this device.' : 'No service key set — import is disabled.'}</p>
+      <p class="warn">${hasKey ? '✓ Access token saved on this device.' : 'No token set — saving is disabled (reads still work).'}</p>
 
       <div class="section-title">2 · Choose file</div>
       <input type="file" id="csvFile" accept=".csv,text/csv" ${hasKey ? '' : 'disabled'} />
@@ -299,10 +299,10 @@
 
     document.getElementById('saveKey').onclick = () => {
       const v = document.getElementById('svcKey').value.trim();
-      if (v) { localStorage.setItem('bbt_service_key', v); renderImport(); }
+      if (v) { localStorage.setItem('bbt_writer_token', v); renderImport(); }
     };
     const clr = document.getElementById('clearKey');
-    if (clr) clr.onclick = () => { localStorage.removeItem('bbt_service_key'); renderImport(); };
+    if (clr) clr.onclick = () => { localStorage.removeItem('bbt_writer_token'); renderImport(); };
 
     let parsed = [];
     const fileEl = document.getElementById('csvFile');
@@ -464,8 +464,8 @@
 
   // ---- tool + listing editing (service key required) -------------------
   function ensureKey() {
-    if (SB.hasServiceKey()) return true;
-    alert('Add your service_role key in the Settings tab first — that unlocks editing, adding tools, and pasting links.');
+    if (SB.hasWriterToken()) return true;
+    alert('Add your access token in the Settings tab first — that unlocks editing, adding tools, and pasting links.');
     return false;
   }
 
@@ -523,20 +523,18 @@
       quantity: gnum('f_qty') || 1,
       target_price: gnum('f_target'),
       notes: g('f_notes') || null,
-      updated_at: new Date().toISOString(),
     };
     msg.textContent = 'Saving…';
     try {
       if (orig) {
         // Re-arm the auto-mapper when identity/part number changed so the
-        // scraper re-maps to dealers with the new SKU.
+        // scraper re-maps to dealers with the new SKU (server sets auto_map_state).
         const changedKey = body.pn !== (orig.pn || null)
           || body.model_number !== (orig.model_number || null)
           || body.name !== orig.name;
-        if (changedKey) body.auto_map_state = null;
-        await SB.req(`tools?id=eq.${orig.tool_id}`, { method: 'PATCH', body, write: true, prefer: 'return=minimal' });
+        await SB.writeApi('update_tool', { id: orig.tool_id, fields: body, remap: changedKey });
       } else {
-        await SB.req('tools', { method: 'POST', body: [body], write: true, prefer: 'return=minimal' });
+        await SB.writeApi('insert_tool', { fields: body });
       }
       await loadAll();
       if (orig) openDetail(orig.tool_id); else closeDetail();
@@ -549,7 +547,7 @@
     if (!t) return;
     if (!confirm(`Delete "${t.name}" and all its price history? This can't be undone.`)) return;
     try {
-      await SB.req(`tools?id=eq.${t.tool_id}`, { method: 'DELETE', write: true, prefer: 'return=minimal' });
+      await SB.writeApi('delete_tool', { id: t.tool_id });
       await loadAll();
       closeDetail();
     } catch (e) {
@@ -566,11 +564,7 @@
     if (!/^https?:\/\//i.test(url)) { msg.textContent = 'Enter a full product URL (https://…).'; return; }
     msg.textContent = 'Adding…';
     try {
-      await SB.req('tool_listings', {
-        method: 'POST',
-        body: [{ tool_id: Number(toolId), dealer_id: Number(sel.value), product_url: url, active: true, source: 'manual' }],
-        write: true, prefer: 'return=minimal',
-      });
+      await SB.writeApi('insert_listing', { tool_id: toolId, dealer_id: sel.value, product_url: url });
       openDetail(toolId); // refresh the dealer list; price lands on next scrape
     } catch (e) {
       msg.textContent = /duplicate|unique/i.test(e.message) ? 'That link is already saved for this dealer.' : 'Add failed: ' + e.message;
@@ -581,12 +575,7 @@
   async function useCandidate(toolId, dealerId, url, candId) {
     if (!ensureKey()) return;
     try {
-      await SB.req('tool_listings', {
-        method: 'POST',
-        body: [{ tool_id: Number(toolId), dealer_id: Number(dealerId), product_url: url, active: true, source: 'manual' }],
-        write: true, prefer: 'return=minimal',
-      });
-      if (candId) await SB.req(`map_candidates?id=eq.${candId}`, { method: 'PATCH', body: { confident: true }, write: true, prefer: 'return=minimal' });
+      await SB.writeApi('accept_candidate', { tool_id: toolId, dealer_id: dealerId, product_url: url, cand_id: candId });
       openDetail(toolId); // price lands on next scrape
     } catch (e) {
       alert(/duplicate|unique/i.test(e.message) ? 'That link is already tracked for this dealer.' : 'Could not add: ' + e.message);
@@ -597,7 +586,7 @@
     if (!ensureKey()) return;
     if (!confirm('Remove this dealer link? Its price history is kept but it stops being tracked.')) return;
     try {
-      await SB.req(`tool_listings?id=eq.${listingId}`, { method: 'PATCH', body: { active: false }, write: true, prefer: 'return=minimal' });
+      await SB.writeApi('remove_listing', { id: listingId });
       openDetail(toolId);
     } catch (e) {
       alert('Could not remove: ' + e.message);
@@ -658,22 +647,9 @@
     })).filter((t) => t.name);
   }
 
+  // Item name is the natural key; matching/upsert happens server-side in the proxy.
   async function importTools(rows) {
-    // Item name is the natural key (model_number is descriptive, not a SKU).
-    const existing = await SB.select('tools', 'select=id,name') || [];
-    const map = new Map(existing.map((t) => [(t.name || '').toLowerCase(), t.id]));
-    let inserted = 0, updated = 0, skipped = 0;
-    const toInsert = [];
-    for (const t of rows) {
-      if (!t.name) { skipped++; continue; }
-      const id = map.get(t.name.toLowerCase());
-      if (id) {
-        await SB.req(`tools?id=eq.${id}`, { method: 'PATCH', body: { ...t, updated_at: new Date().toISOString() }, write: true, prefer: 'return=minimal' });
-        updated++;
-      } else toInsert.push(t);
-    }
-    if (toInsert.length) { await SB.req('tools', { method: 'POST', body: toInsert, write: true, prefer: 'return=minimal' }); inserted = toInsert.length; }
-    return { inserted, updated, skipped };
+    return SB.writeApi('import_tools', { rows });
   }
 
   // ---- routing / tabs --------------------------------------------------

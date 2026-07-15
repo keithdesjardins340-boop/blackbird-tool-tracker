@@ -30,6 +30,15 @@ blackbird-tool-tracker/
 - Dashboard uses the **publishable (anon) key** — read-only via RLS.
 - Scrapers use the **service_role key** — set as a GitHub Actions secret, never
   committed. Get it from Supabase → Project Settings → API.
+- **Dashboard writes** (checkmarks, edits, links, CSV import) go through the
+  **`writer` Edge Function** (`supabase/functions/writer`, `verify_jwt=false`),
+  authorized by a **writer token** stored in the service-role-only `app_secrets`
+  table (migration 0007). The browser holds only that token (per-device, in
+  localStorage) — never the service_role key. **Get the token** (to paste into
+  the dashboard Settings tab): run `select value from app_secrets where key =
+  'writer_token';` in the Supabase SQL editor. **Rotate/revoke**: `update
+  app_secrets set value = encode(gen_random_bytes(24),'hex') where key =
+  'writer_token';` then re-paste the new value on each device.
 
 ## Local dev on this machine (no Node.js)
 
