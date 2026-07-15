@@ -321,7 +321,15 @@
       <div id="csvPreview" class="note"></div>
       <button class="btn" id="doImport" disabled>Import</button>
       <div id="importResult" class="note"></div>
+
+      <div class="section-title">3 · Export / backup</div>
+      <p class="note">Download your full list — tools, owned status, and latest best prices — as a spreadsheet or JSON. No token needed.</p>
+      <button class="btn secondary" id="expCsv">Export CSV</button>
+      <button class="btn secondary" id="expJson">Export JSON</button>
     </div>`;
+
+    document.getElementById('expCsv').onclick = () => exportData('csv');
+    document.getElementById('expJson').onclick = () => exportData('json');
 
     document.getElementById('saveKey').onclick = () => {
       const v = document.getElementById('svcKey').value.trim();
@@ -701,6 +709,36 @@
   // Item name is the natural key; matching/upsert happens server-side in the proxy.
   async function importTools(rows) {
     return SB.writeApi('import_tools', { rows });
+  }
+
+  // ---- export / backup -------------------------------------------------
+  function exportData(format) {
+    const rows = state.tools
+      .slice()
+      .sort((a, b) => (a.tier || '').localeCompare(b.tier || '') || (a.category || '').localeCompare(b.category || '') || a.name.localeCompare(b.name))
+      .map((t) => ({
+        name: t.name, brand: t.brand || '', pn: t.pn || '', category: t.category || '', tier: t.tier || '',
+        quantity: t.quantity || 1, owned: t.owned ? 'yes' : 'no',
+        best_price: t.best_price ?? '', best_dealer: t.best_dealer || '',
+        avg_90d: t.avg_90d ?? '', all_time_low: t.all_time_low ?? '',
+        best_url: t.best_url || '', notes: t.notes || '',
+      }));
+    const stamp = new Date().toISOString().slice(0, 10);
+    let blob, fname;
+    if (format === 'json') {
+      blob = new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json' });
+      fname = `blackbird-tools-${stamp}.json`;
+    } else {
+      const cols = Object.keys(rows[0] || { name: '' });
+      const cell = (v) => { v = String(v ?? ''); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+      const csv = [cols.join(','), ...rows.map((r) => cols.map((c) => cell(r[c])).join(','))].join('\r\n');
+      blob = new Blob(['﻿' + csv], { type: 'text/csv' }); // BOM so Excel reads UTF-8
+      fname = `blackbird-tools-${stamp}.csv`;
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fname; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   // ---- routing / tabs --------------------------------------------------
