@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Dealer price scrapers for the Blackbird tool tracker",
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=22" },
   "scripts": {
     "scrape": "node src/run.js",
     "scrape:dealer": "node src/run.js --dealer",
