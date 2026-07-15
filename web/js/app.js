@@ -6,7 +6,7 @@
     tools: [],            // tool_market_status rows
     sparks: {},           // listing_id -> [price,...]
     health: [],
-    filters: { category: '', owned: '', priced: '', q: '' },
+    filters: { tier: '', category: '', owned: '', priced: '', q: '' },
   };
 
   // ---- helpers ---------------------------------------------------------
@@ -55,6 +55,7 @@
   function applyFilters(list) {
     const f = state.filters;
     return list.filter((t) => {
+      if (f.tier && t.tier !== f.tier) return false;
       if (f.category && t.category !== f.category) return false;
       if (f.owned === 'owned' && !t.owned) return false;
       if (f.owned === 'need' && t.owned) return false;
@@ -69,10 +70,12 @@
 
   function filtersBar() {
     const cats = uniq(state.tools.map((t) => t.category));
+    const tiers = uniq(state.tools.map((t) => t.tier));
     const opt = (v, sel) => `<option value="${esc(v)}"${v === sel ? ' selected' : ''}>${esc(v || 'All')}</option>`;
     const f = state.filters;
     return `<div class="filters">
       <input type="search" id="fq" placeholder="Search name / SKU…" value="${esc(f.q)}" />
+      <select id="ftier"><option value="">Phase: All</option>${tiers.map((v) => opt(v, f.tier)).join('')}</select>
       <select id="fcat"><option value="">Category: All</option>${cats.map((v) => opt(v, f.category)).join('')}</select>
       <select id="fowned">
         <option value="">Owned: All</option>
@@ -91,7 +94,7 @@
       const el = document.getElementById(id);
       if (el) el.addEventListener(ev, () => { state.filters[key] = el.value; render(); });
     };
-    bind('fq', 'q', 'input'); bind('fcat', 'category'); bind('fowned', 'owned'); bind('fpriced', 'priced');
+    bind('fq', 'q', 'input'); bind('ftier', 'tier'); bind('fcat', 'category'); bind('fowned', 'owned'); bind('fpriced', 'priced');
   }
 
   // ---- card ------------------------------------------------------------
@@ -159,24 +162,57 @@
     </div>`;
   }
 
+  // Buy-order windows. Tier 1 first, then 2, then 3.
+  const TIERS = [
+    { key: 'Tier 1', label: 'Tier 1 — Buy first', desc: 'Always on the F-250, every shift' },
+    { key: 'Tier 2', label: 'Tier 2 — Buy next', desc: 'Job-pulled · seasonal · container-staged' },
+    { key: 'Tier 3', label: 'Tier 3 — Phase 2 (F-550)', desc: 'New capacity once the bigger truck is in play' },
+  ];
+
+  function progressBar(owned, total) {
+    const pct = total ? Math.round((owned / total) * 100) : 0;
+    return `<div class="prog"><div class="prog-bar"><span style="width:${pct}%"></span></div>
+      <div class="prog-label">${owned} / ${total} have · ${pct}%</div></div>`;
+  }
+
+  function catBlocks(items) {
+    const byCat = {};
+    for (const t of items) (byCat[t.category || 'Uncategorized'] ||= []).push(t);
+    let html = '';
+    for (const c of Object.keys(byCat).sort()) {
+      const ci = byCat[c].sort((a, b) => a.name.localeCompare(b.name));
+      const o = ci.filter((t) => t.owned).length;
+      html += `<div class="cat-head">${esc(c)}<span class="cat-count">${o}/${ci.length}</span></div>`;
+      html += ci.map(checkRow).join('');
+    }
+    return html;
+  }
+
   function renderChecklist() {
     const list = applyFilters(state.tools);
-    const byCat = {};
-    for (const t of list) (byCat[t.category || 'Uncategorized'] ||= []).push(t);
-    const cats = Object.keys(byCat).sort();
-    const owned = list.filter((t) => t.owned).length;
-    const pct = list.length ? Math.round((owned / list.length) * 100) : 0;
     const keyWarn = SB.hasServiceKey() ? ''
       : '<div class="keybar">Checkmarks are read-only until you add your service key in the <b>Settings</b> tab — that turns on sync.</div>';
-
     let html = filtersBar() + keyWarn
-      + `<div class="prog"><div class="prog-bar"><span style="width:${pct}%"></span></div>
-           <div class="prog-label">${owned} / ${list.length} have · ${pct}%</div></div>`;
-    for (const c of cats) {
-      const items = byCat[c].sort((a, b) => a.name.localeCompare(b.name));
+      + progressBar(list.filter((t) => t.owned).length, list.length);
+
+    // Group into Tier windows in buy order; unknown tiers fall to the end.
+    const byTier = {};
+    for (const t of list) (byTier[t.tier || 'Unassigned'] ||= []).push(t);
+    const order = [...TIERS.map((x) => x.key), ...Object.keys(byTier).filter((k) => !TIERS.some((x) => x.key === k))];
+
+    for (const tk of order) {
+      const items = byTier[tk];
+      if (!items || !items.length) continue;
+      const meta = TIERS.find((x) => x.key === tk);
       const o = items.filter((t) => t.owned).length;
-      html += `<div class="cat-head">${esc(c)}<span class="cat-count">${o}/${items.length}</span></div>`;
-      html += items.map(checkRow).join('');
+      html += `<section class="tier-window" data-tier="${esc(tk)}">
+        <div class="tier-head">
+          <div><div class="tier-title">${esc(meta ? meta.label : tk)}</div>
+            <div class="tier-desc">${esc(meta ? meta.desc : '')}</div></div>
+          <div class="tier-count">${o}/${items.length}</div>
+        </div>
+        ${catBlocks(items)}
+      </section>`;
     }
     view.innerHTML = html;
     wireFilters();
