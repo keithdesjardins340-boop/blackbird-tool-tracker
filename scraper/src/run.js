@@ -59,6 +59,13 @@ async function scrapeDealer(dealer) {
     } catch (err) {
       fail++;
       const entry = { listing_id: listing.id, url: listing.product_url, error: String(err?.message || err) };
+      // Link rot: a 404/410 means the product page is gone for good — stop
+      // tracking this listing (its price history is kept) and note it in the run.
+      if (err?.status === 404 || err?.status === 410) {
+        await supabase.from('tool_listings').update({ active: false }).eq('id', listing.id);
+        entry.deactivated = `HTTP ${err.status}`;
+        console.warn(`  DEAD listing ${listing.id} (HTTP ${err.status}) → deactivated`);
+      }
       errorLog.push(entry);
       console.warn(`  FAIL listing ${listing.id}: ${entry.error}`);
     }

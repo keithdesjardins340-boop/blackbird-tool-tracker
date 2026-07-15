@@ -40,6 +40,21 @@ const pick = (obj: Record<string, unknown>, cols: string[]) => {
 const asInt = (v: unknown) => (v == null || v === "" ? null : Number.parseInt(String(v), 10));
 const LISTING_SOURCES = new Set(["manual", "auto-desc", "auto-sku"]);
 
+// Mirror of scraper/src/util/url.js so pasted links dedupe the same way.
+const TRACKING = /^(utm_.*|gclid|fbclid|msclkid|mc_cid|mc_eid|_ga|igshid|yclid|gbraid|wbraid|dclid|scid|cmpid|icid)$/i;
+function normalizeUrl(raw: string): string {
+  const s = String(raw || "").trim();
+  let u: URL;
+  try { u = new URL(s); } catch { return s; }
+  u.hash = "";
+  u.hostname = u.hostname.toLowerCase();
+  const keep = new URLSearchParams();
+  for (const [k, v] of u.searchParams) if (!TRACKING.test(k)) keep.append(k, v);
+  u.search = keep.toString();
+  if (u.pathname.length > 1 && u.pathname.endsWith("/")) u.pathname = u.pathname.replace(/\/+$/, "");
+  return u.toString();
+}
+
 // deno-lint-ignore no-explicit-any
 async function handle(admin: any, op: string, p: Record<string, any>) {
   const req = (cond: unknown, msg: string) => { if (!cond) throw new Error(msg); };
@@ -75,7 +90,7 @@ async function handle(admin: any, op: string, p: Record<string, any>) {
       req(typeof p.product_url === "string" && /^https?:\/\//i.test(p.product_url), "valid product_url required");
       const source = LISTING_SOURCES.has(p.source) ? p.source : "manual";
       const { error } = await admin.from("tool_listings").insert({
-        tool_id: asInt(p.tool_id), dealer_id: asInt(p.dealer_id), product_url: p.product_url, active: true, source,
+        tool_id: asInt(p.tool_id), dealer_id: asInt(p.dealer_id), product_url: normalizeUrl(p.product_url), active: true, source,
       });
       if (error) throw error; return { ok: true };
     }
@@ -88,7 +103,7 @@ async function handle(admin: any, op: string, p: Record<string, any>) {
       req(asInt(p.tool_id) && asInt(p.dealer_id), "tool_id + dealer_id required");
       req(typeof p.product_url === "string" && /^https?:\/\//i.test(p.product_url), "valid product_url required");
       const { error } = await admin.from("tool_listings").insert({
-        tool_id: asInt(p.tool_id), dealer_id: asInt(p.dealer_id), product_url: p.product_url, active: true, source: "manual",
+        tool_id: asInt(p.tool_id), dealer_id: asInt(p.dealer_id), product_url: normalizeUrl(p.product_url), active: true, source: "manual",
       });
       if (error) throw error;
       if (asInt(p.cand_id)) await admin.from("map_candidates").update({ confident: true }).eq("id", asInt(p.cand_id));

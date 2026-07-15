@@ -15,6 +15,7 @@ import { supabase } from './supabase.js';
 import { getAdapter } from './adapters/index.js';
 import { extractSkus, normSku } from './sku.js';
 import { descQuery, bestByDescription } from './match.js';
+import { normalizeUrl } from './util/url.js';
 import { makeLoader } from './adapters/base.js';
 import { randomDelay } from './util/http.js';
 import { closeBrowser } from './util/browser.js';
@@ -122,7 +123,7 @@ async function main() {
           anyCandidate = true;
           for (const c of (cands || []).slice(0, 3)) {
             await supabase.from('map_candidates').upsert(
-              { tool_id: tool.id, dealer_id: dealer.id, sku: c.sku || null, url: c.url, title: c.title, confident: false },
+              { tool_id: tool.id, dealer_id: dealer.id, sku: c.sku || null, url: normalizeUrl(c.url), title: c.title, confident: false },
               { onConflict: 'tool_id,dealer_id,url' });
           }
           console.log(`  ? ${tool.name} @ ${dealer.name}: best desc ${best.score} < ${DESC_AUTO} → review`);
@@ -130,11 +131,12 @@ async function main() {
       }
 
       if (chosen) {
+        const listingUrl = normalizeUrl(chosen.url);
         await supabase.from('tool_listings').upsert(
-          { tool_id: tool.id, dealer_id: dealer.id, product_url: chosen.url, sku: chosenSku, active: true, source, match_score: matchScore },
+          { tool_id: tool.id, dealer_id: dealer.id, product_url: listingUrl, sku: chosenSku, active: true, source, match_score: matchScore },
           { onConflict: 'dealer_id,product_url' });
         await supabase.from('map_candidates').upsert(
-          { tool_id: tool.id, dealer_id: dealer.id, sku: chosenSku, url: chosen.url, title: chosen.title, confident: source === 'auto-sku' },
+          { tool_id: tool.id, dealer_id: dealer.id, sku: chosenSku, url: listingUrl, title: chosen.title, confident: source === 'auto-sku' },
           { onConflict: 'tool_id,dealer_id,url' });
         mappedAny = true;
         if (source === 'auto-desc') byDesc++;
