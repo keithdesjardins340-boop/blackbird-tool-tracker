@@ -1,8 +1,9 @@
 # Blackbird Tool Tracker — cold-start handoff
 
-Self-contained: paste this whole file into a fresh session that has no repo access
-and it should be able to work. If the session IS in the repo, `CLAUDE.md` loads
-automatically and says the same things — read that instead and ignore this.
+This is the working brief, and it's self-contained: paste the whole file into a
+session that has no repo access and it can work from this alone. Inside the repo,
+`CLAUDE.md` just points here. `PROJECT_BRIEF.md` is the deeper reference (schema,
+views, the writer op whitelist, feature status).
 
 ---
 
