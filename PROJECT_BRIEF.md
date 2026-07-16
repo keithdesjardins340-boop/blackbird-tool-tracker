@@ -114,9 +114,15 @@ the function validates it (constant-time) against `app_secrets.writer_token`, th
 runs a **fixed op whitelist** with payloads sanitized to known columns — no generic
 SQL. Ops: `toggle_owned, update_tool, delete_tool, remove_listing, accept_candidate,
 add_tool_with_links, trigger_scrape, record_price, add_listing_with_price,
-delete_dealer, import_tools`. Every op that attaches a link goes through one
-`attachListing()` helper (revive-if-removed, never move a link between tools), so
-they can't drift apart.
+delete_dealer, import_tools, dismiss_suggestion, mark_suggestion_accepted`. Every op
+that attaches a link goes through one `attachListing()` helper (revive-if-removed,
+never move a link between tools), so they can't drift apart.
+
+Note what is deliberately **not** here: the discovery job does not write through the
+writer. It runs in Actions with the service role, like `run.js` — it isn't a browser,
+and putting a bulk insert in this whitelist would widen the browser's write surface
+for nothing. `mark_suggestion_accepted` only records that a lead was used; the link
+itself is attached by `add_tool_with_links`, through `attachListing()`, like any other.
 - **Get the token:** `select value from app_secrets where key='writer_token';` in the
   Supabase SQL editor → paste into the dashboard **Settings** tab.
 - **Rotate/revoke:** `update app_secrets set value=encode(gen_random_bytes(24),'hex')

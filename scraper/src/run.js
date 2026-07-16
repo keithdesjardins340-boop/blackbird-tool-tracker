@@ -13,6 +13,9 @@ import { randomDelay } from './util/http.js';
 import { closeBrowser } from './util/browser.js';
 import { toCad } from './util/fx.js';
 import { fxStore } from './util/fx-store.js';
+// The same band the discovery matcher and the writer's reflagOutliers use — one
+// definition of "that price is a bad read, not a bargain".
+import { PRICE_SANITY_MAX_RATIO, PRICE_SANITY_MIN_RATIO } from '../../web/js/constants.js';
 
 function arg(name) {
   const i = process.argv.indexOf(name);
@@ -59,7 +62,8 @@ async function isOutlierVsSiblings(listingId, toolId, price) {
   const prices = [...latest.values()].filter((n) => n > 0).sort((a, b) => a - b);
   if (prices.length < 2) return false;
   const median = prices[Math.floor(prices.length / 2)];
-  return median > 0 && (price > median * 4 || price < median * 0.25);
+  return median > 0
+    && (price > median * PRICE_SANITY_MAX_RATIO || price < median * PRICE_SANITY_MIN_RATIO);
 }
 
 async function scrapeDealer(dealer) {

@@ -17,11 +17,21 @@ himself**. The system's only automated job is **refreshing prices on links it wa
 given**: best price per tool, price history, a tiered buy-order checklist, and a
 record of what he actually paid.
 
-**There is no automated dealer discovery, and that's on purpose.** An earlier
-build-out chased "every dealer, every tool", priced ~55 of 295 tools, and produced
-matching noise instead of purchases. He rolled it back. Auto-map still exists behind
-the repo variable `ENABLE_AUTO_MAP` (unset). Don't resurrect it, don't "fix" it, and
-don't propose dealer catalogs — he chose signal over coverage.
+**Nothing is ever attached automatically, and that's the whole design.** An earlier
+build-out chased "every dealer, every tool", auto-attached listings, priced ~55 of 295
+tools and produced matching noise instead of purchases. He rolled it back. Auto-map
+still exists behind the repo variable `ENABLE_AUTO_MAP` (unset). Don't resurrect it,
+don't "fix" it, don't propose dealer catalogs — he chose signal over coverage.
+
+**Deal discovery (2026-07-16) is the review-gated retry of that idea, and the
+distinction is load-bearing.** A weekly job searches Google Shopping (SerpApi) for
+tools already on the list and drops candidate *cheaper* listings into an inbox as
+**leads**. It never attaches anything and never writes a price: accepting a lead means
+he pastes the real dealer link, and the generic adapter prices it like any other. Its
+matcher **fails closed** — no reference price, no lead; not cheaper, no lead. Gated by
+`ENABLE_DISCOVERY` + a `SERPAPI_KEY` secret; both unset ⇒ it does nothing. **If it
+ever starts producing noise, that's the old failure returning: turn the variable off
+rather than tuning it.**
 
 Live: <https://keithdesjardins340-boop.github.io/blackbird-tool-tracker/>
 Repo (public): `github.com/keithdesjardins340-boop/blackbird-tool-tracker`

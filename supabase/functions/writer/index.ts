@@ -480,6 +480,26 @@ async function handle(admin: any, op: string, p: Record<string, any>) {
       if (sErr) throw sErr;
       return { tool_id: toolId, listing_id: listingId, price: fx.price_cad, is_anomaly: anomaly, currency: fx.currency, fx_rate: fx.fx_rate };
     }
+    case "dismiss_suggestion": {
+      // Kill a discovery lead. One tap, no confirm — same discipline as the ✓'s
+      // Skip. The row stays (status='dismissed') rather than being deleted, and
+      // the job checks it: that's what stops next week's run re-surfacing junk he
+      // already said no to.
+      req(asInt(p.id), "id required");
+      const { error } = await admin.from("discovery_suggestions")
+        .update({ status: "dismissed" }).eq("id", asInt(p.id));
+      if (error) throw error; return { id: asInt(p.id), status: "dismissed" };
+    }
+    case "mark_suggestion_accepted": {
+      // Called AFTER the link has been attached through the ordinary add-a-link
+      // path. Deliberately not an attach op of its own: accepting must go through
+      // attachListing() like every other link, or discovery becomes a second way
+      // into tool_listings with its own bugs.
+      req(asInt(p.id), "id required");
+      const { error } = await admin.from("discovery_suggestions")
+        .update({ status: "accepted" }).eq("id", asInt(p.id));
+      if (error) throw error; return { id: asInt(p.id), status: "accepted" };
+    }
     case "delete_dealer": {
       // Dealers auto-register from pasted hostnames, so the owner needs a way to
       // remove a wrong/junk one. tool_listings.dealer_id is ON DELETE CASCADE, so

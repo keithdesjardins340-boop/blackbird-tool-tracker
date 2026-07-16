@@ -36,3 +36,21 @@ export const PRICE_AGE_CHIP_DAYS = 7;
  * Below this the whole list fits on a screen and a search box is just chrome.
  */
 export const SEARCH_FROM_TOOLS = 15;
+
+/**
+ * Cross-dealer sanity band: a price this far from what a tool's OTHER dealers
+ * charge is a bad read, not a bargain.
+ *
+ * This is the myflukestore trap's second line of defence — a link that reads a
+ * $135 warranty add-on instead of the $725 meter is wrong EVERY time, so
+ * comparing a listing to itself never catches it. Comparing it to its siblings
+ * does.
+ *
+ * Used by `run.js` (flag the snapshot), the writer's `reflagOutliers` (re-judge
+ * a revived link's history), and the discovery matcher (drop an obviously-wrong
+ * candidate before it ever reaches him). The writer keeps its own literal copy
+ * because the Edge Function can't import from /web — a test pins the two
+ * together, so they can't drift.
+ */
+export const PRICE_SANITY_MAX_RATIO = 4;
+export const PRICE_SANITY_MIN_RATIO = 0.25;

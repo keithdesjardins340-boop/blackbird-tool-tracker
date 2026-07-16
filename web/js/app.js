@@ -9,6 +9,8 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS, SEARCH_FROM_TOOLS } f
     health: [],
     dealers: [],          // {id,name} for the manual-link picker
     issues: [],           // links the last scrape couldn't price (Health alert)
+    leads: [],            // discovery_inbox rows — unverified candidates, review-gated
+    acceptingLead: null,  // lead id awaiting the link he pastes (see addListing)
     filters: { tier: '', category: '', owned: '', priced: '', q: '' },
   };
 
@@ -138,14 +140,19 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS, SEARCH_FROM_TOOLS } f
       }
     }
     try {
-      const [tools, health, dealers] = await Promise.all([
+      const [tools, health, dealers, leads] = await Promise.all([
         SB.select('tool_market_status', 'select=*'),
         SB.select('dealer_health', 'select=*'),
         SB.select('dealers', 'select=id,name&order=name.asc'),
+        // desc + limit: pending leads accumulate, and the API silently caps at
+        // 1000 rows — losing the OLDEST pending lead is the harmless end.
+        // Empty/absent (feature off) must never break the load, hence catch.
+        SB.select('discovery_inbox', 'select=*&order=seen_at.desc&limit=200').catch(() => []),
       ]);
       state.tools = tools || [];
       state.health = health || [];
       state.dealers = dealers || [];
+      state.leads = leads || [];
       state.issues = await resolveIssueTools(collectIssues());
 
       const listingIds = uniq(state.tools.map((t) => t.best_listing_id).filter((x) => x != null));
@@ -744,9 +751,52 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS, SEARCH_FROM_TOOLS } f
     wireFilters();
   }
 
+  // ---- discovery inbox --------------------------------------------------
+  // Leads found by the weekly discovery job. They are NOT prices: the number
+  // came off a Google Shopping row and has never been through the adapter or
+  // the FX conversion, so it's shown with a ~ and labelled unverified. It only
+  // becomes real when he adds the dealer link and the scraper prices it — the
+  // same path as any link he pastes himself.
+  //
+  // Renders only when there's something to review. An empty section here would
+  // be chrome advertising a feature instead of doing a job.
+  function leadsSection() {
+    const leads = state.leads || [];
+    if (!leads.length) return '';
+    const rows = leads.map((l) => `
+      <div class="lead-row" data-lead="${l.id}">
+        <div class="lead-main">
+          <div class="lead-tool">${esc(l.tool_name)}</div>
+          <div class="lead-sub">${esc(l.merchant)}${l.title ? ' · ' + esc(String(l.title).slice(0, 70)) : ''}</div>
+        </div>
+        <div class="lead-price">
+          <span class="amount">~${money(l.price_seen)}</span>
+          <span class="lead-unverified">unverified</span>
+        </div>
+        <div class="lead-actions">
+          <a href="${esc(l.candidate_url)}" target="_blank" rel="noopener"
+             aria-label="Open the listing for ${esc(l.tool_name)} at ${esc(l.merchant)}">Open ↗</a>
+          <button class="btn btn-sm" data-lead-add="${l.id}" data-lead-tool="${l.tool_id}">Add link</button>
+          <button class="link-x" data-lead-dismiss="${l.id}" aria-label="Dismiss this lead" title="Dismiss">✕</button>
+        </div>
+      </div>`).join('');
+    return `<div class="section-title">${leads.length} lead${leads.length === 1 ? '' : 's'} to review
+        <span class="muted">— found by the weekly search; nothing is tracked until you add the link</span></div>
+      <div class="leads">${rows}</div>`;
+  }
+
+  async function dismissLead(id) {
+    if (!ensureKey()) return;
+    state.leads = (state.leads || []).filter((l) => String(l.id) !== String(id));
+    render();
+    try { await SB.writeApi('dismiss_suggestion', { id: Number(id) }); }
+    catch (e) { alert('Could not dismiss: ' + e.message); loadAll(); }
+  }
+
   function renderDeals() {
     const deals = applyFilters(state.tools).filter(isDeal).sort((a, b) => dealScore(a) - dealScore(b));
     view.innerHTML = filtersBar()
+      + leadsSection()
       + `<div class="section-title">${deals.length} deal${deals.length === 1 ? '' : 's'} — ≥${Math.abs(DEAL_PCT)}% below 90-day avg or at all-time low</div>`
       + cardListHTML(deals);
     wireFilters();
@@ -1334,6 +1384,18 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS, SEARCH_FROM_TOOLS } f
       const res = await SB.writeApi('add_tool_with_links', { tool_id: toolId, links });
       const tracked = (res.links_added || 0) + (res.links_revived || 0);
       if (tracked > 0) {
+        // A link landed for the tool a lead pointed at → that lead is spent.
+        // Marked here, not on the button press: "accepted" should mean the link
+        // is actually tracked, not that he looked at it.
+        const lead = state.acceptingLead;
+        if (lead && String(lead.tool_id) === String(toolId)) {
+          state.acceptingLead = null;
+          state.leads = (state.leads || []).filter((l) => String(l.id) !== String(lead.id));
+          SB.writeApi('mark_suggestion_accepted', { id: Number(lead.id) }).catch(() => {
+            /* the link is tracked either way; a stuck lead is recoverable, losing
+               the link would not be. Next load re-reads the real state. */
+          });
+        }
         openDetail(toolId); // refresh the dealer list; price lands on next scrape
       } else if (res.conflicts && res.conflicts.length) {
         msg.textContent = 'That link is already tracked under a different tool.';
@@ -1657,6 +1719,18 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS, SEARCH_FROM_TOOLS } f
     // stopPropagation: copying is not "open this tool" — the button sits inside
     // the row, and the overlay opening over a toast would swallow the feedback.
     if (cp) { e.stopPropagation(); handleCopyClick(cp); return; }
+    const dis = e.target.closest('[data-lead-dismiss]');
+    if (dis) { e.stopPropagation(); dismissLead(dis.dataset.leadDismiss); return; }
+    const add = e.target.closest('[data-lead-add]');
+    if (add) {
+      e.stopPropagation();
+      // Remember which lead this came from, then hand him the ordinary
+      // add-a-link box. The lead is marked accepted only once a link actually
+      // lands (see addListing) — clicking "Add link" isn't accepting anything.
+      state.acceptingLead = { id: add.dataset.leadAdd, tool_id: add.dataset.leadTool };
+      openDetail(add.dataset.leadTool);
+      return;
+    }
     const row = e.target.closest('.card[data-tool], .check-row[data-tool]');
     if (row) openDetail(row.dataset.tool);
   });

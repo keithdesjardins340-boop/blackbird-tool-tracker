@@ -148,6 +148,38 @@ unaffected either way. Alerts are deduplicated: the same tool is only re-announc
 if its price drops a further ≥2%, or 14 days pass — an alert you learn to swipe
 away is worse than no alert.
 
+## Deal discovery (optional, free — currently OFF)
+
+Once a week, this can search Google Shopping for the tools already on your list and
+drop **candidate cheaper listings** into a review inbox on the Deals tab. It never
+attaches anything and never records a price: a lead's price is shown as `~$X
+unverified`, because it came off a search result and hasn't been through the scraper
+or the CAD conversion. Press **Add link**, paste the real dealer URL, and it becomes a
+tracked listing like any other — same path as a link you paste yourself.
+
+**To turn it on:**
+
+1. Free [SerpApi](https://serpapi.com) account → copy the API key.
+2. Repo → Settings → Secrets and variables → Actions → **New repository secret**
+   `SERPAPI_KEY`. **Don't send it to anyone** — it goes browser-to-browser.
+3. Same screen → **Variables** tab → `ENABLE_DISCOVERY` = `true`.
+4. Actions → Deal discovery → **Run workflow** → tick **dry_run** for the first go.
+   That searches without saving anything and prints what it found, so you can see
+   whether the results are worth having before it writes a single row.
+
+**The budget, because past a point this costs money.** SerpApi's free tier is ~250
+searches/month and this spends **one search per tool per run**. So it runs weekly, 40
+tools per run — about **172 searches/month, inside the free tier** — and works through
+the list least-recently-searched first. A 295-tool list therefore takes ~7 weeks to
+sweep once. Raising `DISCOVERY_MAX_TOOLS` or the cron frequency past ~250/month means
+a paid plan; that's a decision with a price on it.
+
+**What to watch on the first real run.** If the only merchants it finds are Amazon and
+fluke.com — dealers you already track, which get filtered out — then Shopping isn't
+reaching your niche industrial dealers and this feature isn't earning its keep. Turn
+`ENABLE_DISCOVERY` back off. If a new merchant with a genuinely lower price shows up,
+it's working.
+
 ## Backups
 
 The **Weekly backup** workflow runs every Monday and dumps the whole database

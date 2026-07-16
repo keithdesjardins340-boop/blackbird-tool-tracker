@@ -1,0 +1,64 @@
+name: Deal discovery
+
+# Searches Google Shopping (via SerpApi) for tools already on the list and drops
+# candidate CHEAPER listings into a review inbox. It never attaches anything —
+# accepting a lead goes through the ordinary add-a-link path.
+#
+# Opt-in and instantly killable: the repo VARIABLE ENABLE_DISCOVERY gates it, so
+# a noisy run is one toggle away from off. Same spirit as ENABLE_AUTO_MAP, but a
+# separate feature — this one is review-gated and never writes a price.
+#
+# WEEKLY, not daily, for two reasons that agree:
+#   - SerpApi's free tier is ~250 searches/month and this spends one per tool per
+#     run. Weekly × 40 tools ≈ 172/month — inside the free tier. Daily × 60 (the
+#     obvious first guess) is ~1800/month, i.e. 7x over, which either bills him
+#     or dies four days in.
+#   - He reads the app weekly. Leads landing daily would be piling up unread.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Mondays 06:00 UTC — offset from the 01:00/13:00 scrapes
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Search but write nothing; print the raw SerpApi shape'
+        type: boolean
+        default: false
+      max_tools:
+        description: 'How many tools to search this run (1 SerpApi search each)'
+        required: false
+        default: ''
+
+concurrency:
+  group: discover
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    if: vars.ENABLE_DISCOVERY == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: scraper
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Search
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+          DISCOVERY_MAX_TOOLS: ${{ github.event.inputs.max_tools || '40' }}
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            node src/discover.js --dry-run >> "$GITHUB_STEP_SUMMARY"
+          else
+            node src/discover.js >> "$GITHUB_STEP_SUMMARY"
+          fi

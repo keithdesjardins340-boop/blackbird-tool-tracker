@@ -168,6 +168,21 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 16px 14px 48px; }
   vertical-align: middle; min-width: 0; min-height: 0; }
 .dealer-actions .copy-btn { margin-left: 0; }
 
+/* Discovery leads ------------------------------------------------------ */
+/* Monochrome on purpose: a lead is not a status and not a deal. The only
+   colour is the warn step on "unverified", because that word IS the meaning —
+   this number has not been through the adapter or the FX conversion. */
+.leads { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.lead-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.lead-main { flex: 1; min-width: 0; }
+.lead-tool { font-weight: 700; font-size: 14px; }
+.lead-sub { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lead-price { text-align: right; white-space: nowrap; }
+.lead-price .amount { font-weight: 800; }
+.lead-unverified { display: block; font-size: 10px; color: var(--warn-ink); font-weight: 700; }
+.lead-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+
 /* Purchase capture ---------------------------------------------------- */
 /* The money line under a tier title. Monochrome: it's information, not a
    judgement — the tier ramp beside it already carries the priority colour. */
