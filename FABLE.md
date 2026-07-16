@@ -173,6 +173,11 @@ every migration to a throwaway `postgres:16` and assert what the views promise.
 Every trap in §6 has a test that fails if it comes back. Add to them rather than
 around them.
 
-**Open / not done:** offline write-queue for checkmarks, lazy sparklines, overlay
-focus-trap + Esc, aria polish, copy-best-price-link, and `report.js` hardcodes
-the −10% deal threshold instead of sharing `DEAL_PCT`. See `docs/ROADMAP.md`.
+**Open / not done:** overlay focus-trap + Esc, aria polish, copy-best-price-link,
+purchase capture on ✓, ntfy deal alerts, and deploying the writer from CI instead
+of by hand (needs a Supabase access token from him). See `docs/ROADMAP.md`.
+
+**Recently landed:** the test harness (§7), shared thresholds in
+`web/js/constants.js`, deploy-time `CACHE` stamping, the weekly backup workflow,
+the manual-price staleness guard (0017), the offline write-queue for checkmarks
+(`web/js/queue.js` — `toggle_owned` only), and lazy sparklines.
