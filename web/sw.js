@@ -1,7 +1,13 @@
 // Offline-capable service worker with a NETWORK-FIRST strategy for the app
 // shell, so a fresh deploy is always picked up when online; the cache is only a
 // fallback when offline. Supabase API calls are never cached (always fresh).
-const CACHE = 'bbt-shell-v19'; // bump on every deploy → old caches cleared + update toast fires
+// DEPLOY_STAMP: deploy-web.yml rewrites this exact line with the commit SHA
+// before publishing, so every deploy gets a unique cache name automatically —
+// old caches are cleared and the update toast fires without anyone remembering
+// to bump a number. Don't reword the line; the deploy asserts it matched.
+// It stays 'bbt-shell-dev' in the repo (and when serving /web locally, which is
+// what keeps /web build-step-free for development).
+const CACHE = 'bbt-shell-dev'; // DEPLOY_STAMP
 const SHELL = [
   '.', 'index.html', 'css/styles.css',
   // constants.js is imported BY app.js, so it must be precached too — a module

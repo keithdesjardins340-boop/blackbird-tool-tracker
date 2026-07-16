@@ -122,6 +122,25 @@ wipe while price history rebuilds, then settle.
 - **Dashboard**: `web/serve.ps1` serves it on http://localhost:8125 — no build.
 - **Scraper**: runs in GitHub Actions (needs Node + Playwright). To run it on a
   machine with Node: `cd scraper && npm install && node src/run.js`.
+- **Tests**: `test.yml` runs them on every push and PR, and reports the counts on
+  the run page. With Node: `cd scraper && npm test` (the DB layer needs a Postgres
+  and a `DATABASE_URL` — see the workflow).
+
+## The one deploy-time trick: the service-worker cache name
+
+`web/sw.js` has to use a different `CACHE` name on every deploy — otherwise
+browsers keep serving the old app and a deploy looks like it never landed. That
+used to be a rule someone had to remember; now `deploy-web.yml` rewrites this line
+with the commit SHA just before publishing:
+
+```js
+const CACHE = 'bbt-shell-dev'; // DEPLOY_STAMP
+```
+
+So: **don't bump it by hand, and don't reword that line** — the deploy fails
+loudly if it can't find it, rather than shipping a worker that can't bust its
+cache. It's the only substitution that happens at deploy; the file in the repo is
+plain valid JS, and `/web` still has no build step for development.
 
 ## Status
 

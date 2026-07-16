@@ -116,7 +116,10 @@ read-only). Writes go through the writer function, authorized by a **writer toke
   browser's HTTP cache, so "network-first" wasn't fresh and deploys looked like they
   never landed. Fixed with `cache:'no-cache'` + `Request(url,{cache:'reload'})`.
   *Symptom:* a cache-busted `?cb=` fetch shows the NEW file while the running page is
-  OLD. **Bump `CACHE` in `sw.js` on every deploy.**
+  OLD. `CACHE` in `sw.js` must differ on every deploy — **`deploy-web.yml` stamps
+  the commit SHA into it**, so don't bump it by hand (the repo copy stays
+  `bbt-shell-dev`), and don't reword that line: the deploy fails if its `sed`
+  matches nothing, and a test guards the seam.
 - **Prices were assumed CAD.** A US price was stored as if Canadian (~40% error —
   it made the most expensive dealer look like the cheapest). Currency now comes off
   the page and converts via the Bank of Canada Valet API (free, no key). It **fails

@@ -24,9 +24,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+
+      # The service worker's cache name must change every deploy, or browsers
+      # keep serving the old shell and a deploy looks like it never landed —
+      # that bug cost real hours once. It used to rely on someone remembering to
+      # bump a version by hand; now the commit SHA is stamped in at deploy time.
+      # This is the ONE build-ish step, it happens only here, and the file in the
+      # repo stays valid JS — so /web still has no build step for development.
+      - name: Stamp the service-worker cache name with this commit
+        shell: bash
+        run: |
+          sha="${GITHUB_SHA::12}"
+          sed -i -E "s|^const CACHE = '[^']*'; // DEPLOY_STAMP\$|const CACHE = 'bbt-shell-${sha}'; // DEPLOY_STAMP|" web/sw.js
+          # Fail loudly rather than shipping an unstamped worker: a silent no-op
+          # here would quietly restore the exact staleness bug this prevents.
+          if ! grep -q "^const CACHE = 'bbt-shell-${sha}'; // DEPLOY_STAMP\$" web/sw.js; then
+            echo "::error::Could not stamp CACHE in web/sw.js — the DEPLOY_STAMP line no longer matches. Refusing to deploy a worker that can't bust its cache."
+            grep -n "const CACHE" web/sw.js || true
+            exit 1
+          fi
+          echo "service worker cache name: bbt-shell-${sha}"
+
       - uses: actions/upload-pages-artifact@v3
         with:
-          # Vanilla PWA — no build step, just publish the folder.
+          # Vanilla PWA — no build step, just publish the folder (with the
+          # service worker's cache name stamped by the step above).
           path: web
       - id: deployment
         uses: actions/deploy-pages@v4

@@ -214,6 +214,7 @@ sanctioned path for blocked dealers.
 - Views are replaced with `security_invoker=true` restated, every time.
 - Colour only where it carries meaning; chart palettes stay CVD-validated against
   `#ffffff` — re-validate if 2.2's status chips touch the palette.
-- Bump-free deploys after 2.4 — until it lands, keep bumping `CACHE` by hand.
+- **Never bump `CACHE` by hand** (2.4 landed): `deploy-web.yml` stamps the commit SHA
+  into `sw.js` at deploy. The repo copy stays `bbt-shell-dev`.
 - Clean up all test tools/dealers/snapshots after each session and restore his data
   exactly; his live list is small and hand-built — treat every row as his.
