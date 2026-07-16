@@ -1,7 +1,7 @@
 # Scraper
 
-Node.js dealer adapters + batch runner. Runs in GitHub Actions twice daily;
-can also run locally on a machine with Node 20+.
+Node.js dealer adapters + batch price runner. Runs in GitHub Actions twice daily;
+can also run locally on a machine with Node 22+.
 
 ## Install & run
 
@@ -11,10 +11,11 @@ npm install
 npx playwright install chromium   # only needed for JS-rendered dealers
 cp .env.example .env               # fill in SUPABASE_SERVICE_ROLE_KEY
 
-node src/run.js                    # scrape all active dealers
-node src/run.js --dealer "Princess Auto"
-node src/link-finder.js "Princess Auto" "PF12345"   # find candidate URLs
-node src/import-csv.js ./tools.csv                  # import tool list
+node src/run.js                    # refresh prices for all active dealers (the product)
+node src/run.js --dealer "KMS Tools"
+node src/import-csv.js ./tools.csv                  # import a tool list
+# node src/auto-map.js / link-finder.js are PARKED (discovery) — see below
+
 ```
 
 ## Architecture

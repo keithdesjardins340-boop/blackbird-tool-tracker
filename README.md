@@ -7,21 +7,26 @@ Actions scheduled scrapers. Same pattern as the other Blackbird apps.
 ```
 blackbird-tool-tracker/
 ├─ supabase/           SQL migrations (schema, views, RLS)
-├─ scraper/            Node.js — dealer adapters, batch runner, link finder, CSV import
+├─ scraper/            Node.js — dealer adapters + batch price runner, CSV import (auto-map parked)
 ├─ web/                Vanilla PWA dashboard (no build step; served by serve.ps1)
 └─ .github/workflows/  Cron scrapers + GitHub Pages deploy
 ```
 
-## How it fits together
+## How it fits together (manual-first)
 
-1. **`tools`** = your ~193-item list (from the spreadsheet).
-2. **Link finder** searches each dealer for a tool's model number and proposes
-   product URLs. You approve → they become **`tool_listings`** (the mapping).
-3. **Scrapers** run twice daily in GitHub Actions, visit each active listing,
-   and write a **`price_snapshot`** (price, sale, stock). Failures are logged to
-   **`scrape_runs`**, never crash the batch.
-4. **Dashboard** reads Supabase views (`tool_market_status`, `dealer_health`)
-   and shows the watchlist, deals, per-tool history, and scraper health.
+1. **`tools`** = your own curated list. Add a tool in the dashboard's quick-add
+   (**＋**) and paste the dealer links you want tracked — the dealer for each link is
+   detected from its hostname (auto-registered if it's a new site). Links become
+   **`tool_listings`**. There is **no automated discovery**; the scraper only refreshes
+   links you gave it.
+2. **Scrapers** run twice daily in GitHub Actions (or on demand via the dashboard's
+   **Run price scrape now** button), visit each active listing, and write a
+   **`price_snapshot`** (price, sale, stock). Failures are logged to **`scrape_runs`**,
+   never crash the batch.
+3. For dealers CI can't reach (Canadian Tire, Amazon), the **bookmarklet** captures a
+   price from your own browser (see below).
+4. **Dashboard** reads Supabase views (`tool_market_status`, `dealer_health`) and shows
+   the checklist, deals, per-tool history, and scraper health.
 
 ## Supabase
 
@@ -110,15 +115,10 @@ wipe while price history rebuilds, then settle.
 - **Scraper**: runs in GitHub Actions (needs Node + Playwright). To run it on a
   machine with Node: `cd scraper && npm install && node src/run.js`.
 
-## Setup checklist
+## Status
 
-- [x] Supabase project + schema
-- [x] Princess Auto adapter (Phase 1)
-- [ ] Import tool list CSV (`scraper/src/import-csv.js` or via Supabase)
-- [ ] Run link finder to build `tool_listings`
-- [ ] Add GitHub repo + secrets (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`)
-- [ ] Enable GitHub Pages (deploy workflow) → set dashboard config
-- [ ] Phase 1: KMS Tools, Home Depot Canada
-- [ ] Phase 2: Canadian Tire, Amazon.ca (best-effort)
-
-See `scraper/README.md` and `web/README.md` for details.
+Live and deployed: the Supabase schema + views, the `writer` Edge Function, the
+GitHub Pages dashboard, and the twice-daily scraper (GitHub Actions secrets
+`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`). Day-to-day use is: add tools and paste
+links in the dashboard, and let the scraper — or the **Run price scrape now** button —
+keep prices fresh. See `scraper/README.md` for the scraper internals.
