@@ -160,13 +160,14 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 16px 14px 48px; }
 .stat .l { font-size: 11px; color: var(--muted); margin-top: 3px; }
 
 /* Add-link + edit form */
-.add-link { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.add-link select, .add-link input {
+.add-link { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; }
+.add-link select, .add-link input, .add-link textarea {
   background: var(--card); color: var(--text); border: 1px solid var(--line);
-  border-radius: 10px; padding: 10px 11px; font-size: 13px;
+  border-radius: 10px; padding: 10px 11px; font-size: 13px; font-family: inherit;
 }
-.add-link select:focus, .add-link input:focus { outline: none; border-color: var(--ink); }
-.add-link input[type=url] { flex: 1; min-width: 180px; }
+.add-link select:focus, .add-link input:focus, .add-link textarea:focus { outline: none; border-color: var(--ink); }
+.add-link input[type=url], .add-link textarea { flex: 1; min-width: 180px; }
+.add-link textarea { resize: vertical; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin: 10px 0 16px; }
 .form-grid label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); font-weight: 600; }
 .form-grid label.full { grid-column: 1 / -1; }

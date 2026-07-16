@@ -300,7 +300,11 @@
         <div class="tool-sub" style="text-align:right">${esc(label)}</div>
       </div>`;
     };
-    view.innerHTML = '<div class="section-title">Scraper health — last run per dealer</div>' + state.health.map(row).join('');
+    view.innerHTML = '<div class="section-title">Scraper health — last run per dealer</div>'
+      + '<div class="add-link" style="margin-bottom:12px"><button class="btn" id="runScrapeH">Run price scrape now</button><span id="runScrapeHMsg" class="note" style="align-self:center"></span></div>'
+      + state.health.map(row).join('');
+    const rbH = document.getElementById('runScrapeH');
+    if (rbH) rbH.onclick = () => triggerScrape(document.getElementById('runScrapeHMsg'));
   }
 
   function renderImport() {
@@ -326,10 +330,17 @@
       <p class="note">Download your full list — tools, owned status, and latest best prices — as a spreadsheet or JSON. No token needed.</p>
       <button class="btn secondary" id="expCsv">Export CSV</button>
       <button class="btn secondary" id="expJson">Export JSON</button>
+
+      <div class="section-title">4 · Refresh prices now</div>
+      <p class="note">Prices refresh automatically twice a day. Use this to run a scrape now — handy right after adding links. Rate-limited to once every 10 minutes.</p>
+      <button class="btn" id="runScrape" ${hasKey ? '' : 'disabled'}>Run price scrape now</button>
+      <div id="runScrapeMsg" class="note"></div>
     </div>`;
 
     document.getElementById('expCsv').onclick = () => exportData('csv');
     document.getElementById('expJson').onclick = () => exportData('json');
+    const runBtn = document.getElementById('runScrape');
+    if (runBtn) runBtn.onclick = () => triggerScrape(document.getElementById('runScrapeMsg'));
 
     document.getElementById('saveKey').onclick = () => {
       const v = document.getElementById('svcKey').value.trim();
@@ -429,7 +440,7 @@
             <button class="link-x" data-remove-listing="${l.id}" title="Remove this link">✕</button>
           </div>
         </div>`;
-      }).join('') || '<div class="note">No dealer links yet. Paste one below (or the scraper will map it automatically if it has a part number).</div>';
+      }).join('') || '<div class="note">No dealer links yet. Paste one below — its price refreshes on the next scrape run.</div>';
 
       // PN harvester: if this tool has no part number but a dealer page exposed
       // one, offer to set it in one tap (re-arms the SKU auto-mapper).
@@ -441,17 +452,16 @@
           <button class="btn btn-sm" id="setPnBtn" data-tool="${toolId}" data-pn="${esc(harvested.mpn)}">Set part #</button>
         </div>` : '';
 
-      // Manual-link form: dealer picker + URL. Known dealers use their own
-      // scraper; "Other" prices any site via the generic fallback.
-      const dealerOpts = state.dealers.map((d) =>
-        `<option value="${d.id}"${d.name === 'Other' ? ' selected' : ''}>${esc(d.name)}</option>`).join('');
+      // Manual-link form: paste one or more product URLs; the dealer is resolved
+      // from each link's hostname (auto-registered if new). One writer call.
       const addForm = `
-        <div class="section-title">Add a dealer link</div>
+        <div class="section-title">Add dealer links</div>
         <div class="add-link">
-          <select id="alDealer">${dealerOpts}</select>
-          <input type="url" id="alUrl" placeholder="Paste product page URL…" />
+          <textarea id="alUrls" rows="2" placeholder="Paste one or more product URLs, one per line…"></textarea>
           <button class="btn" id="alAdd" data-tool="${toolId}">Add</button>
         </div>
+        <div class="note">The dealer is detected automatically from each link's website.</div>
+        <div id="alCaveat" class="note warn"></div>
         <div id="alMsg" class="note"></div>`;
 
       // Description-matched suggestions the user can accept with one tap.
@@ -501,6 +511,7 @@
       });
       const alAdd = document.getElementById('alAdd');
       if (alAdd) alAdd.onclick = () => addListing(toolId);
+      wireCaveats('alUrls', 'alCaveat');
       detailBody.querySelectorAll('[data-use-cand]').forEach((btn) => {
         btn.onclick = () => useCandidate(toolId, btn.dataset.dealer, btn.dataset.url, btn.dataset.useCand);
       });
@@ -535,6 +546,8 @@
         <label>Quantity<input id="f_qty" type="number" min="1" value="${t?.quantity ?? 1}" /></label>
         <label>Target price<input id="f_target" type="number" step="0.01" value="${t?.target_price ?? ''}" /></label>
         <label class="full">Notes<textarea id="f_notes" rows="2">${v(t?.notes)}</textarea></label>
+        ${!t ? `<label class="full">Dealer links <span class="muted">(one URL per line — optional)</span><textarea id="f_links" rows="3" placeholder="https://www.kmstools.com/…&#10;https://…"></textarea></label>` : ''}
+        ${!t ? '<div id="f_links_note" class="note warn" style="grid-column:1/-1"></div>' : ''}
       </div>
       <datalist id="dl_cat">${cats.map((c) => `<option value="${esc(c)}">`).join('')}</datalist>
       <datalist id="dl_tier">${tiers.map((c) => `<option value="${esc(c)}">`).join('')}</datalist>
@@ -544,14 +557,15 @@
         ${t ? '<button class="btn danger" id="f_delete">Delete</button>' : ''}
       </div>
       <div class="note" style="margin-top:10px">${t
-        ? 'Changing the part # or name re-arms the scraper — it re-maps this tool to dealers on the next run.'
-        : 'New tools with a part # get auto-mapped to KMS on the next scrape run.'}</div>
+        ? 'Manage dealer links from the tool\'s detail view after saving.'
+        : 'Paste the dealer links you want tracked — each one\'s price refreshes on the next scrape run.'}</div>
       <div id="f_msg" class="note"></div>`;
 
     document.getElementById('f_cancel').onclick = () => { if (toolId) openDetail(toolId); else closeDetail(); };
     document.getElementById('f_save').onclick = () => saveToolForm(t);
     const del = document.getElementById('f_delete');
     if (del) del.onclick = () => deleteTool(t);
+    wireCaveats('f_links', 'f_links_note');
   }
 
   async function saveToolForm(orig) {
@@ -574,17 +588,25 @@
     msg.textContent = 'Saving…';
     try {
       if (orig) {
-        // Re-arm the auto-mapper when identity/part number changed so the
-        // scraper re-maps to dealers with the new SKU (server sets auto_map_state).
+        // Re-arm the (parked) auto-mapper when identity/part number changed, so a
+        // future ENABLE_AUTO_MAP run re-maps with the new SKU (server sets state).
         const changedKey = body.pn !== (orig.pn || null)
           || body.model_number !== (orig.model_number || null)
           || body.name !== orig.name;
         await SB.writeApi('update_tool', { id: orig.tool_id, fields: body, remap: changedKey });
+        await loadAll();
+        openDetail(orig.tool_id);
       } else {
-        await SB.writeApi('insert_tool', { fields: body });
+        // Create the tool and its pasted dealer links in one call; each link's
+        // dealer is resolved/auto-registered by hostname server-side.
+        const res = await SB.writeApi('add_tool_with_links', { fields: body, links: g('f_links') });
+        await loadAll();
+        const created = state.tools.find((x) => String(x.tool_id) === String(res.tool_id));
+        if (created) openDetail(res.tool_id); else closeDetail();
+        if (res.links_added > 0 && confirm(`Added with ${res.links_added} link${res.links_added > 1 ? 's' : ''}. Run a price scrape now? (prices also update on the next scheduled run.)`)) {
+          triggerScrape(null);
+        }
       }
-      await loadAll();
-      if (orig) openDetail(orig.tool_id); else closeDetail();
     } catch (e) {
       msg.textContent = 'Save failed: ' + e.message;
     }
@@ -604,17 +626,154 @@
 
   async function addListing(toolId) {
     if (!ensureKey()) return;
-    const sel = document.getElementById('alDealer');
-    const urlEl = document.getElementById('alUrl');
+    const urlsEl = document.getElementById('alUrls');
     const msg = document.getElementById('alMsg');
-    const url = (urlEl.value || '').trim();
-    if (!/^https?:\/\//i.test(url)) { msg.textContent = 'Enter a full product URL (https://…).'; return; }
+    const links = (urlsEl.value || '').trim();
+    if (!/https?:\/\//i.test(links)) { msg.textContent = 'Paste at least one full product URL (https://…).'; return; }
     msg.textContent = 'Adding…';
     try {
-      await SB.writeApi('insert_listing', { tool_id: toolId, dealer_id: sel.value, product_url: url });
-      openDetail(toolId); // refresh the dealer list; price lands on next scrape
+      const res = await SB.writeApi('add_tool_with_links', { tool_id: toolId, links });
+      if (res.links_added > 0) {
+        openDetail(toolId); // refresh the dealer list; price lands on next scrape
+      } else {
+        msg.textContent = 'No new links added — those URLs are already saved for their dealer.';
+      }
     } catch (e) {
-      msg.textContent = /duplicate|unique/i.test(e.message) ? 'That link is already saved for this dealer.' : 'Add failed: ' + e.message;
+      msg.textContent = 'Add failed: ' + e.message;
+    }
+  }
+
+  // Kick off a price scrape now (GitHub workflow_dispatch via the writer). The op
+  // is rate-limited and self-explains if the GH_PAT secret isn't configured.
+  async function triggerScrape(msgEl) {
+    if (!ensureKey()) return;
+    if (msgEl) msgEl.textContent = 'Starting…';
+    try {
+      const res = await SB.writeApi('trigger_scrape', {});
+      const m = res.message || (res.triggered ? 'Scrape started.' : 'Not started.');
+      if (msgEl) msgEl.textContent = m; else alert(m);
+    } catch (e) {
+      const m = 'Could not start the scrape: ' + e.message;
+      if (msgEl) msgEl.textContent = m; else alert(m);
+    }
+  }
+
+  // ---- browser-captured prices (bookmarklet import, §5.4) --------------
+  // Mirror of the writer/scraper normalizeUrl so URL matching lines up.
+  const IMPORT_TRACKING = /^(utm_.*|gclid|fbclid|msclkid|mc_cid|mc_eid|_ga|igshid|yclid|gbraid|wbraid|dclid|scid|cmpid|icid)$/i;
+  function normalizeUrl(raw) {
+    try {
+      const u = new URL(String(raw).trim());
+      u.hash = ''; u.hostname = u.hostname.toLowerCase();
+      const keep = new URLSearchParams();
+      for (const [k, v] of u.searchParams) if (!IMPORT_TRACKING.test(k)) keep.append(k, v);
+      u.search = keep.toString();
+      if (u.pathname.length > 1 && u.pathname.endsWith('/')) u.pathname = u.pathname.replace(/\/+$/, '');
+      return u.toString();
+    } catch { return String(raw || '').trim(); }
+  }
+  function parseNum(v) {
+    if (v == null) return null;
+    const s = String(v).replace(/[^\d.,]/g, ''); if (!s) return null;
+    const t = s.lastIndexOf(',') > s.lastIndexOf('.') ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+    const n = parseFloat(t); return Number.isFinite(n) ? n : null;
+  }
+
+  // Dealers CI can't refresh — shown as a note at paste/capture time (§3.3).
+  const CAVEATS = [
+    { re: /canadiantire\.ca/i, msg: 'Canadian Tire blocks automated refresh — capture its price with the bookmarklet instead.' },
+    { re: /amazon\.ca/i, msg: 'Amazon.ca blocks automated refresh — capture its price with the bookmarklet instead.' },
+    { re: /homedepot\.ca/i, msg: 'Home Depot refreshes only intermittently from the scraper.' },
+  ];
+  const linkCaveats = (text) => {
+    const hits = CAVEATS.filter((c) => c.re.test(text || '')).map((c) => c.msg);
+    return hits.length ? '⚠ ' + hits.join(' ') : '';
+  };
+  function wireCaveats(inputId, noteId) {
+    const el = document.getElementById(inputId), note = document.getElementById(noteId);
+    if (!el || !note) return;
+    const upd = () => { note.textContent = linkCaveats(el.value); };
+    el.addEventListener('input', upd); upd();
+  }
+
+  // Read a #import=<base64 JSON> payload (from the bookmarklet) and open the modal.
+  async function handleImportHash() {
+    const m = /[#&]import=([^&]+)/.exec(location.hash || '');
+    if (!m) return;
+    history.replaceState(null, '', location.pathname + location.search); // don't re-fire on refresh
+    let payload;
+    try { payload = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(m[1]))))); }
+    catch { alert('Could not read the captured price link.'); return; }
+    openImport(payload);
+  }
+
+  async function openImport(payload) {
+    if (!ensureKey()) return;
+    const price = parseNum(payload && payload.price);
+    const nurl = normalizeUrl((payload && payload.url) || '');
+    let host = ''; try { host = new URL(nurl).hostname.replace(/^www\./, ''); } catch { /* */ }
+    detail.classList.remove('hidden'); detail.setAttribute('aria-hidden', 'false');
+    if (!price || !/^https?:/i.test(nurl)) {
+      detailBody.innerHTML = `<h2>Import captured price</h2><div class="note">Couldn't read a valid price and URL from that capture.</div><div class="form-actions"><button class="btn secondary" id="imCancel">Close</button></div>`;
+      document.getElementById('imCancel').onclick = closeDetail; return;
+    }
+    detailBody.innerHTML = '<h2>Import captured price</h2><div class="note">Checking…</div>';
+    let match = null;
+    try {
+      const rows = await SB.select('tool_listings', `select=id,tool:tools(name),dealer:dealers(name)&active=eq.true&product_url=eq.${encodeURIComponent(nurl)}`);
+      match = (rows || [])[0] || null;
+    } catch { /* treat as no match */ }
+
+    const info = `<h2>Import captured price</h2>
+      <div class="tool-sub">${esc(payload.title || '(no title)')}</div>
+      <div class="stat-grid">
+        <div class="stat"><div class="v">${money(price)}</div><div class="l">captured price</div></div>
+        <div class="stat"><div class="v">${esc(host || '—')}</div><div class="l">dealer (from link)</div></div>
+      </div>
+      <div class="note" style="word-break:break-all">${esc(nurl)}</div>`;
+
+    if (match) {
+      detailBody.innerHTML = info
+        + `<div class="note">Already tracked for <b>${esc(match.tool?.name || '')}</b> at <b>${esc(match.dealer?.name || '')}</b>.</div>`
+        + `<div class="form-actions"><button class="btn" id="imGo">Record ${money(price)}</button><button class="btn secondary" id="imCancel">Cancel</button></div><div id="imMsg" class="note"></div>`;
+      document.getElementById('imGo').onclick = () => doImport('record_price', { listing_id: match.id, price });
+    } else {
+      const opts = state.tools.slice().sort((a, b) => a.name.localeCompare(b.name))
+        .map((t) => `<option value="${t.tool_id}">${esc(t.name)}</option>`).join('');
+      detailBody.innerHTML = info
+        + `<div class="section-title">Attach this price to a tool</div>
+        <div class="form-grid">
+          <label class="full">Existing tool<select id="imTool"><option value="">— pick a tool —</option>${opts}</select></label>
+          <label class="full">…or create a new tool<input id="imNew" value="${esc(payload.title || '')}" placeholder="New tool name" /></label>
+        </div>
+        <div class="form-actions"><button class="btn" id="imGo">Add link + record price</button><button class="btn secondary" id="imCancel">Cancel</button></div>
+        <div id="imMsg" class="note"></div>`;
+      document.getElementById('imGo').onclick = () => {
+        const tid = document.getElementById('imTool').value;
+        const newName = document.getElementById('imNew').value.trim();
+        const op = { product_url: nurl, price };
+        if (tid) op.tool_id = tid;
+        else if (newName) op.fields = { name: newName };
+        else { document.getElementById('imMsg').textContent = 'Pick a tool or type a new name.'; return; }
+        doImport('add_listing_with_price', op);
+      };
+    }
+    document.getElementById('imCancel').onclick = closeDetail;
+  }
+
+  async function doImport(op, payload) {
+    const msg = document.getElementById('imMsg');
+    if (msg) msg.textContent = 'Saving…';
+    try {
+      const res = await SB.writeApi(op, payload);
+      await loadAll();
+      closeDetail();
+      if (res.tool_id) openDetail(res.tool_id);
+      alert(res.is_anomaly
+        ? 'Price saved — but it looks off versus history, so it was flagged and excluded from stats.'
+        : 'Price saved.');
+    } catch (e) {
+      if (msg) msg.textContent = 'Import failed: ' + e.message;
     }
   }
 
@@ -807,5 +966,7 @@
   }
   // Refresh automatically when the network comes back after being offline.
   window.addEventListener('online', () => { if (state.offline) loadAll(); });
-  loadAll();
+  // Bookmarklet capture: handle a #import= payload on boot and on later changes.
+  window.addEventListener('hashchange', handleImportHash);
+  loadAll().then(handleImportHash);
 })();

@@ -55,6 +55,79 @@ function normalizeUrl(raw: string): string {
   return u.toString();
 }
 
+// Hostname → dealer (§3.2 manual-first). Known dealers keep their curated names
+// (and dedicated adapters); any other host auto-registers a dealer named by its
+// base domain, priced by the generic adapter. "Other" is no longer used here.
+const KNOWN_HOSTS: Record<string, string> = {
+  "kmstools.com": "KMS Tools",
+  "homedepot.ca": "Home Depot Canada",
+  "canadiantire.ca": "Canadian Tire",
+  "amazon.ca": "Amazon.ca",
+  "princessauto.com": "Princess Auto",
+};
+
+// Base domain from a hostname: drop a leading www. and keep the last two labels
+// (good enough for the .com/.ca dealers this app tracks).
+function baseHost(hostname: string): string {
+  const h = hostname.toLowerCase().replace(/^www\./, "");
+  const parts = h.split(".");
+  return parts.length > 2 ? parts.slice(-2).join(".") : h;
+}
+
+// Resolve (or create) the dealer for a URL. `cache` dedupes within one request.
+// deno-lint-ignore no-explicit-any
+async function resolveDealer(admin: any, url: string, cache: Map<string, number>): Promise<number | null> {
+  let host: string;
+  try { host = new URL(url).hostname.toLowerCase(); } catch { return null; }
+  const base = baseHost(host);
+  if (cache.has(base)) return cache.get(base)!;
+  const name = KNOWN_HOSTS[base] || base;
+  const { data: found } = await admin.from("dealers").select("id").eq("name", name).maybeSingle();
+  let id: number;
+  if (found) {
+    id = found.id;
+  } else {
+    const { data: created, error } = await admin.from("dealers")
+      .insert({ name, base_url: `https://${base}`, scraper_status: "active" })
+      .select("id").single();
+    if (error) throw error;
+    id = created.id;
+  }
+  cache.set(base, id);
+  return id;
+}
+
+// Parse a links payload (array or newline-separated string) into a deduped list
+// of normalized http(s) URLs. Non-URL lines are dropped.
+function parseLinks(input: unknown): string[] {
+  const arr = Array.isArray(input) ? input : String(input ?? "").split(/\r?\n/);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of arr) {
+    const s = String(raw ?? "").trim();
+    if (!/^https?:\/\//i.test(s)) continue;
+    const url = normalizeUrl(s);
+    if (!seen.has(url)) { seen.add(url); out.push(url); }
+  }
+  return out;
+}
+
+// Price anomaly gate — mirror of scraper/src/run.js isAnomaly(). A non-positive
+// price is rejected upstream; here we flag a plausible-but-wild price (>5x/<0.2x
+// the listing's recent clean median, needs ≥3 points) so a bad manual capture is
+// recorded but excluded from stats, exactly like a scraped anomaly.
+// deno-lint-ignore no-explicit-any
+async function isAnomaly(admin: any, listingId: number, price: number): Promise<boolean> {
+  if (price == null || price <= 0) return true;
+  const { data } = await admin.from("price_snapshots")
+    .select("price_cad").eq("listing_id", listingId).eq("is_anomaly", false)
+    .order("scraped_at", { ascending: false }).limit(5);
+  const prices = (data || []).map((r: { price_cad: number }) => Number(r.price_cad)).filter((n: number) => n > 0).sort((a: number, b: number) => a - b);
+  if (prices.length < 3) return false;
+  const median = prices[Math.floor(prices.length / 2)];
+  return median > 0 && (price > median * 5 || price < median * 0.2);
+}
+
 // deno-lint-ignore no-explicit-any
 async function handle(admin: any, op: string, p: Record<string, any>) {
   const req = (cond: unknown, msg: string) => { if (!cond) throw new Error(msg); };
@@ -108,6 +181,123 @@ async function handle(admin: any, op: string, p: Record<string, any>) {
       if (error) throw error;
       if (asInt(p.cand_id)) await admin.from("map_candidates").update({ confident: true }).eq("id", asInt(p.cand_id));
       return { ok: true };
+    }
+    case "add_tool_with_links": {
+      // Quick-add (§3.1): create a tool (fields.name) OR attach to an existing
+      // one (tool_id), plus a manual listing per pasted link — each link's dealer
+      // resolved/auto-registered by hostname (§3.2). One round-trip.
+      let toolId = asInt(p.tool_id);
+      if (!toolId) {
+        const fields = pick(p.fields || {}, TOOL_COLS);
+        req(fields.name, "name required");
+        const { data, error } = await admin.from("tools").insert(fields).select("id").single();
+        if (error) throw error;
+        toolId = data.id;
+      }
+      const urls = parseLinks(p.links);
+      const cache = new Map<string, number>();
+      const rows: Record<string, unknown>[] = [];
+      for (const url of urls) {
+        const dealerId = await resolveDealer(admin, url, cache);
+        if (dealerId) rows.push({ tool_id: toolId, dealer_id: dealerId, product_url: url, active: true, source: "manual" });
+      }
+      let links_added = 0;
+      if (rows.length) {
+        // DO NOTHING on the (dealer_id, product_url) unique index; .select()
+        // returns only the rows actually inserted, so the count is accurate.
+        const { data: ins, error } = await admin.from("tool_listings")
+          .upsert(rows, { onConflict: "dealer_id,product_url", ignoreDuplicates: true })
+          .select("id");
+        if (error) throw error;
+        links_added = (ins || []).length;
+      }
+      return { tool_id: toolId, links_added };
+    }
+    case "trigger_scrape": {
+      // Kick the scrape workflow via GitHub's workflow_dispatch (§3.4). The PAT
+      // lives ONLY in the GH_PAT function secret — never returned, logged, or sent
+      // to the browser. Rate-limited to once / 10 min via app_secrets.
+      const pat = Deno.env.get("GH_PAT");
+      if (!pat) {
+        return { configured: false, triggered: false, message: "Refresh isn't set up yet. Add a GitHub fine-grained PAT as the GH_PAT function secret in Supabase to enable it." };
+      }
+      const now = Date.now();
+      const { data: last } = await admin.from("app_secrets").select("value").eq("key", "last_scrape_trigger").maybeSingle();
+      if (last?.value) {
+        const prev = Date.parse(last.value);
+        const mins = (now - prev) / 60000;
+        if (Number.isFinite(prev) && mins < 10) {
+          return { configured: true, triggered: false, message: `A scrape was started ${Math.ceil(mins)} min ago — try again in about ${Math.max(1, Math.ceil(10 - mins))} min.` };
+        }
+      }
+      const repo = Deno.env.get("GH_REPO") || "keithdesjardins340-boop/blackbird-tool-tracker";
+      const ref = Deno.env.get("GH_REF") || "main";
+      const resp = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/scrape.yml/dispatches`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${pat}`,
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "User-Agent": "blackbird-tool-tracker",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ref }),
+      });
+      if (resp.status !== 204) {
+        const txt = await resp.text().catch(() => "");
+        throw new Error(`GitHub dispatch failed (${resp.status}). Check the PAT scope/repo. ${txt.slice(0, 160)}`);
+      }
+      await admin.from("app_secrets").upsert(
+        { key: "last_scrape_trigger", value: new Date(now).toISOString(), updated_at: new Date(now).toISOString() },
+        { onConflict: "key" });
+      return { configured: true, triggered: true, message: "Scrape started — fresh prices in a few minutes." };
+    }
+    case "record_price": {
+      // Browser-captured snapshot for an EXISTING listing (§5.4 bookmarklet).
+      req(asInt(p.listing_id), "listing_id required");
+      const price = Number(p.price);
+      req(Number.isFinite(price) && price > 0, "a valid positive price is required");
+      const { data: listing } = await admin.from("tool_listings").select("id").eq("id", asInt(p.listing_id)).maybeSingle();
+      req(listing, "listing not found");
+      const anomaly = await isAnomaly(admin, listing.id, price);
+      const rp = Number(p.regular_price);
+      const snap: Record<string, unknown> = { listing_id: listing.id, price_cad: price, is_anomaly: anomaly, parse_via: "manual-capture" };
+      if (p.in_stock != null) snap.in_stock = !!p.in_stock;
+      if (Number.isFinite(rp) && rp > price) { snap.regular_price_cad = rp; snap.on_sale = true; }
+      const { error } = await admin.from("price_snapshots").insert(snap);
+      if (error) throw error;
+      return { listing_id: listing.id, price, is_anomaly: anomaly };
+    }
+    case "add_listing_with_price": {
+      // Create/attach a manual listing for a URL AND record its first price, in one
+      // step (§5.4). tool_id attaches to an existing tool; else fields.name makes a
+      // new one. Dealer is resolved/auto-registered by hostname.
+      req(typeof p.product_url === "string" && /^https?:\/\//i.test(p.product_url), "valid product_url required");
+      const price = Number(p.price);
+      req(Number.isFinite(price) && price > 0, "a valid positive price is required");
+      let toolId = asInt(p.tool_id);
+      if (!toolId) {
+        const fields = pick(p.fields || {}, TOOL_COLS);
+        req(fields.name, "tool_id or fields.name required");
+        const { data, error } = await admin.from("tools").insert(fields).select("id").single();
+        if (error) throw error;
+        toolId = data.id;
+      }
+      const url = normalizeUrl(p.product_url);
+      const dealerId = await resolveDealer(admin, url, new Map<string, number>());
+      req(dealerId, "could not resolve a dealer for that URL");
+      const { data: listing, error: lErr } = await admin.from("tool_listings")
+        .upsert({ tool_id: toolId, dealer_id: dealerId, product_url: url, active: true, source: "manual" }, { onConflict: "dealer_id,product_url" })
+        .select("id").single();
+      if (lErr) throw lErr;
+      const anomaly = await isAnomaly(admin, listing.id, price);
+      const rp = Number(p.regular_price);
+      const snap: Record<string, unknown> = { listing_id: listing.id, price_cad: price, is_anomaly: anomaly, parse_via: "manual-capture" };
+      if (p.in_stock != null) snap.in_stock = !!p.in_stock;
+      if (Number.isFinite(rp) && rp > price) { snap.regular_price_cad = rp; snap.on_sale = true; }
+      const { error: sErr } = await admin.from("price_snapshots").insert(snap);
+      if (sErr) throw sErr;
+      return { tool_id: toolId, listing_id: listing.id, price, is_anomaly: anomaly };
     }
     case "import_tools": {
       const rows: Record<string, unknown>[] = Array.isArray(p.rows) ? p.rows : [];

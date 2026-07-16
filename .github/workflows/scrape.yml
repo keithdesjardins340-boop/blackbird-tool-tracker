@@ -42,8 +42,13 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
-      # A mapper hiccup must not block pricing — the two steps are independent.
+      # Auto-map is PARKED for the manual-first model (the owner pastes links; the
+      # scraper only refreshes prices). The code stays in-tree and validated; set
+      # the repo variable ENABLE_AUTO_MAP='true' to bring discovery back. When
+      # unset/false this step is skipped and map_limit is inert.
+      # (A mapper hiccup also can't block pricing — the two steps are independent.)
       - name: Auto-map new tools to dealer listings
+        if: vars.ENABLE_AUTO_MAP == 'true'
         continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

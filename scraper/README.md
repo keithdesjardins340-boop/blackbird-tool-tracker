@@ -38,9 +38,16 @@ node src/import-csv.js ./tools.csv                  # import tool list
 - `src/run.js` — for each active dealer, opens a `scrape_runs` row, scrapes every
   active listing sequentially, writes a `price_snapshot` per success, logs every
   failure into `error_log`, and closes the run. One dealer (or listing) breaking
-  never aborts the batch.
+  never aborts the batch. **This is the product** in the manual-first model: it
+  refreshes prices on the links the owner pasted; it does not discover new links.
+- `src/auto-map.js` — **parked** (manual-first pivot). The description/SKU matcher
+  (`match.js`, `sku.js`, `map_candidates`) is validated and kept in-tree, but the
+  scrape workflow only runs it when the repo variable `ENABLE_AUTO_MAP == 'true'`.
 
 ## Adding a dealer
+
+Under manual-first this is rarely needed — pasting a link auto-registers its
+dealer by hostname (see the app's quick-add flow). For a hand-built adapter:
 
 1. Copy `adapters/princess-auto.js` to `adapters/<dealer>.js`.
 2. Implement `scrape()` (and optionally `search()` for the link finder).

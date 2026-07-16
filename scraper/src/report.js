@@ -21,6 +21,18 @@ async function main() {
   const { count: anomToday } = await supabase
     .from('price_snapshots').select('*', { count: 'exact', head: true }).gte('scraped_at', since).eq('is_anomaly', true);
 
+  // Unpriced links: active listings with NO fresh snapshot in the window — i.e. a
+  // dead or blocked pasted link. In manual-first this is the key signal (a bad
+  // link should be visible now, not discovered at buy time).
+  const { data: activeListings } = await supabase
+    .from('tool_listings')
+    .select('id, tool:tools(name), dealer:dealers(name)')
+    .eq('active', true);
+  const { data: freshSnaps } = await supabase
+    .from('price_snapshots').select('listing_id').gte('scraped_at', since);
+  const fresh = new Set((freshSnaps || []).map((s) => s.listing_id));
+  const unpriced = (activeListings || []).filter((l) => !fresh.has(l.id));
+
   const L = [];
   L.push('## 🛠️ Blackbird scrape run', '');
 
@@ -33,6 +45,24 @@ async function main() {
   L.push('', `**${snapsToday ?? 0}** price snapshot(s) in the last 24h`
     + (anomToday ? ` · ⚠️ **${anomToday}** flagged anomalous (excluded from stats)` : '')
     + ` · **${(priced || []).length}** tools currently priced`);
+
+  L.push('', `### Unpriced links (${unpriced.length})`);
+  if (unpriced.length) {
+    L.push('_Active links with no fresh price in the last 24h — a dead or blocked link shows up here._');
+    const byDealer = new Map();
+    for (const l of unpriced) {
+      const dn = l.dealer?.name || '(unknown)';
+      if (!byDealer.has(dn)) byDealer.set(dn, []);
+      byDealer.get(dn).push(l.tool?.name || `listing ${l.id}`);
+    }
+    L.push('| Dealer | # | Tools |', '|---|---|---|');
+    for (const [dn, tools] of [...byDealer.entries()].sort((a, b) => b[1].length - a[1].length)) {
+      const shown = tools.slice(0, 6).join(', ') + (tools.length > 6 ? `, +${tools.length - 6} more` : '');
+      L.push(`| ${dn} | ${tools.length} | ${shown} |`);
+    }
+  } else {
+    L.push('_Every active link got a fresh price. ✅_');
+  }
 
   const isDeal = (t) => t.at_all_time_low || (t.pct_vs_avg_90d != null && t.pct_vs_avg_90d <= -10);
   const deals = (priced || []).filter(isDeal)
