@@ -15,6 +15,8 @@
       <span class="clock" id="scrapeClock"></span> Blackbird <span class="muted">Tool Tracker</span>
     </div>
     <div class="topbar-actions">
+      <!-- Checkmarks ticked with no signal: saved here, syncing when there is one. -->
+      <span id="pendingBadge" class="pending-badge hidden" aria-live="polite"></span>
       <button id="addToolBtn" class="icon-btn" title="Add a tool">＋</button>
       <button id="refreshBtn" class="icon-btn" title="Refresh">&#x21bb;</button>
     </div>
@@ -40,6 +42,8 @@
   </div>
 
   <script src="js/config.js"></script>
+  <!-- Before supabase.js: writeApi() hooks the queue to park writes made offline. -->
+  <script src="js/queue.js"></script>
   <script src="js/supabase.js"></script>
   <script src="js/charts.js"></script>
   <!-- app.js is a module so it can import js/constants.js (shared with the

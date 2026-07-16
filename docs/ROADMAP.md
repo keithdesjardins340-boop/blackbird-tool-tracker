@@ -148,10 +148,14 @@ recorded in `fx_rate` per the audit contract), reject beyond that. Fail-closed s
 this just narrows "Valet hiccuped" from "lost the run's USD prices" to "used
 yesterday's rate, said so."
 
-### 2.7 Show the conversion audit
+### 2.7 Show the conversion audit — ✅ already shipped
 Converted rows already store `price_original` + `fx_rate`; surface them: detail-view
 converted prices get a small secondary line — `US$635.99 · 1.4051 · Jul 14`. It earns
 its place: it's the answer to "why does fluke.com say a different number than the app."
+
+**Already done** — `fxNote()` in `app.js` has been rendering this all along, as
+`$893.63 · Jul 16 · converted from 635.99 USD @ 1.4051` on each dealer row.
+Verified in the browser against a seeded USD listing. Nothing to build.
 
 ### 2.8 Deploy the writer from CI, not by hand
 **Problem.** `supabase/functions/writer/` is deployed by copying its source into a
@@ -196,7 +200,7 @@ sanctioned path for blocked dealers.
 |---|---|
 | 1 | ✅ 1.6 test harness + fixtures (locks the traps in before touching anything else) |
 | 2 | ✅ 1.7 shared constants · ✅ 2.4 CACHE stamping · ✅ 2.5 weekly backup · ⏸ 2.8 writer deploy (needs his token) |
-| 3 | 2.2 staleness guard · 2.7 conversion audit line |
+| 3 | ✅ 2.2 staleness guard · ✅ 2.7 conversion audit line (was already shipped) |
 | 4 | 1.1 offline queue · 1.2 lazy sparklines |
 | 5 | 2.3 purchase capture + progress math |
 | 6 | 2.1 ntfy alerts · 1.3–1.5 a11y + copy-link · §3 as reached |

@@ -13,7 +13,7 @@ const SHELL = [
   // constants.js is imported BY app.js, so it must be precached too — a module
   // import that misses the cache takes the whole app down offline, and the
   // checklist is exactly what he needs in a basement with no signal.
-  'js/config.js', 'js/constants.js', 'js/supabase.js', 'js/charts.js', 'js/app.js',
+  'js/config.js', 'js/constants.js', 'js/queue.js', 'js/supabase.js', 'js/charts.js', 'js/app.js',
   'manifest.webmanifest', 'icon.svg',
 ];
 

@@ -130,7 +130,9 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
       if (c && c.tools) {
         state.tools = c.tools; state.health = c.health || []; state.dealers = c.dealers || []; state.sparks = c.sparks || {};
         state.issues = collectIssues();
-        state.lastGoodAt = c.at; render(); // instant paint from cache
+        state.lastGoodAt = c.at;
+        await syncPendingUI(); // his queued ticks outrank the cached copy
+        render(); // instant paint from cache
       } else {
         view.innerHTML = '<div class="loading">Loading…</div>';
       }
@@ -159,6 +161,10 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
         for (const r of rows || []) (state.sparks[r.listing_id] ||= []).push(Number(r.price_cad));
       }
       state.offline = false; state.lastGoodAt = Date.now();
+      // The server's `owned` is authoritative EXCEPT where a queued tick hasn't
+      // reached it yet — overlay those before caching, or saveCache() would
+      // freeze the pre-tick value into the offline copy.
+      await syncPendingUI();
       saveCache();
       render();
     } catch (e) {
@@ -367,11 +373,65 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
     t.owned = next;              // optimistic
     render();
     try {
+      // Offline, this returns {queued:true} and the ✓ stands: it's saved locally
+      // and will sync. The optimistic flip IS the queued state, so the screen
+      // matches what's going to happen rather than lying and snapping back.
       await SB.writeApi('toggle_owned', { id: toolId, owned: next });
+      await syncPendingUI();
     } catch (e) {
       t.owned = !next; render();
       alert('Could not save: ' + e.message);
     }
+  }
+
+  // ---- offline write queue --------------------------------------------
+  /**
+   * Reconcile the UI with the queue: overlay every not-yet-synced checkmark on
+   * top of what the server said, and update the count.
+   *
+   * The overlay is the point. After a reload with no signal, the tool list comes
+   * from the server (or the cache) and still says "not owned" — his tick is only
+   * in the queue. Without this it would look like the app forgot.
+   *
+   * Counts tools, not taps: queue.js collapses repeat toggles of the same tool.
+   */
+  async function syncPendingUI() {
+    const q = window.BBT_QUEUE;
+    if (!q) return;
+    const rows = await q.all().catch(() => []);
+    for (const r of rows) {
+      if (r.op !== 'toggle_owned') continue;
+      const t = state.tools.find((x) => String(x.tool_id) === String(r.payload?.id));
+      if (t) t.owned = !!r.payload.owned;
+    }
+    state.pending = rows.length;
+    updatePendingBadge();
+  }
+
+  function updatePendingBadge() {
+    const el = document.getElementById('pendingBadge');
+    if (!el) return;
+    const n = state.pending || 0;
+    el.textContent = n ? `${n} pending` : '';
+    el.classList.toggle('hidden', !n);
+    el.title = state.pendingError
+      ? `Couldn't sync yet: ${state.pendingError}. Your changes are saved on this device and will retry.`
+      : `${n} checkmark${n === 1 ? '' : 's'} saved on this device, waiting for a connection.`;
+    el.classList.toggle('err', !!state.pendingError);
+  }
+
+  /** Replay queued checkmarks. Safe to call often — it no-ops on an empty queue. */
+  async function flushQueue() {
+    const q = window.BBT_QUEUE;
+    if (!q || !SB.hasWriterToken()) return;
+    if (!(await q.count())) return;
+    // send() bypasses the queue, so a failure here can't re-queue what we're
+    // already replaying.
+    const { done, left, error } = await q.flush((op, payload) => SB.send(op, payload));
+    state.pending = left;
+    state.pendingError = error && !error.offline ? error.message : null;
+    updatePendingBadge();
+    if (done && !left) loadAll().catch(() => {}); // resync from the server's truth
   }
 
   // ---- views -----------------------------------------------------------
@@ -1241,10 +1301,19 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
       }).catch(() => {});
     });
   }
-  // Refresh automatically when the network comes back after being offline.
-  window.addEventListener('online', () => { if (state.offline) loadAll(); });
+  // Refresh automatically when the network comes back after being offline —
+  // and push up anything he ticked while it was gone, BEFORE re-reading, so the
+  // server's answer includes his changes instead of overwriting them on screen.
+  window.addEventListener('online', async () => {
+    await flushQueue();
+    if (state.offline) loadAll();
+  });
   // Bookmarklet capture: handle a #import= payload on boot and on later changes.
   window.addEventListener('hashchange', handleImportHash);
   setInterval(renderScrapeClock, 60000); // the clock has to keep moving on its own
+  // Flush on open too, not just on the `online` event: the event only fires if
+  // the tab was OPEN when the connection returned. The common case is ticking
+  // tools off in a basement, closing the app, and opening it again on the road.
+  flushQueue().catch(() => {});
   loadAll().catch(() => {}).then(handleImportHash); // don't drop a capture if refresh hiccups
 })();
