@@ -267,7 +267,6 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 16px 14px 48px; }
   position: sticky; top: 114px; z-index: 5; background: var(--bg-2);
   padding: 13px 0 10px; margin-bottom: 2px; }
 .tier-title { font-size: 16px; font-weight: 800; letter-spacing: -.2px; }
-.tier-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .tier-count { font-size: 13px; font-weight: 750; color: var(--muted); white-space: nowrap; }
 
 .cat-head { display: flex; justify-content: space-between; align-items: center; gap: 10px;

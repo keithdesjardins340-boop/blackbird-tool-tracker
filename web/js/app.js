@@ -231,10 +231,11 @@
   }
 
   // Buy-order windows. Tier 1 first, then 2, then 3. Always shown, even empty.
+  // Just the number — the order is the meaning; it doesn't need a caption.
   const TIERS = [
-    { key: 'Tier 1', label: 'Tier 1', desc: 'Buy first' },
-    { key: 'Tier 2', label: 'Tier 2', desc: 'Buy next' },
-    { key: 'Tier 3', label: 'Tier 3', desc: 'Later' },
+    { key: 'Tier 1', label: 'Tier 1' },
+    { key: 'Tier 2', label: 'Tier 2' },
+    { key: 'Tier 3', label: 'Tier 3' },
   ];
 
   // Ready-made categories so a new tool is a pick, not a typing exercise. Free
@@ -289,8 +290,7 @@
       const o = items.filter((t) => t.owned).length;
       html += `<section class="tier-window" data-tier="${esc(tk)}">
         <div class="tier-head">
-          <div><div class="tier-title">${esc(meta ? meta.label : tk)}</div>
-            <div class="tier-desc">${esc(meta ? meta.desc : '')}</div></div>
+          <div><div class="tier-title">${esc(meta ? meta.label : tk)}</div></div>
           <div class="tier-count">${o}/${items.length}</div>
         </div>
         ${items.length ? catBlocks(items) : '<div class="note" style="padding:4px 0 6px">Nothing here yet — add a tool with the ＋ button.</div>'}
@@ -364,7 +364,6 @@
         else if (d.fail_count > 0) { cls = 'warn'; label = `${d.fail_count} failing`; }
         else { cls = 'ok'; label = 'healthy'; }
       }
-      if (d.scraper_status === 'beta') label += ' · beta';
       return `<div class="health-row">
         <div>
           <div><span class="status-dot ${cls}"></span><b>${esc(d.name)}</b></div>
