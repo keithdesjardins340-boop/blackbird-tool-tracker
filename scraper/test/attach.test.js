@@ -25,13 +25,30 @@ test('a removed link is REVIVED, not silently ignored', () => {
   assert.deepEqual(decideAttach(existing, 1), { state: 'revived', id: 10 });
 });
 
-test('a link belonging to another tool is a CONFLICT — never moved', () => {
-  // The load-bearing case. Reassigning the link would drag its whole price
-  // history onto the wrong tool; the caller reports it instead.
-  assert.deepEqual(decideAttach({ id: 10, tool_id: 2, active: true }, 1), { state: 'conflict', id: 10 });
-  // Removed-and-owned-by-someone-else is still a conflict: reviving it here
-  // would be exactly the silent move we refuse to make.
-  assert.deepEqual(decideAttach({ id: 10, tool_id: 2, active: false }, 1), { state: 'conflict', id: 10 });
+test('a link LIVE on another tool is a CONFLICT — never taken', () => {
+  // The load-bearing case. Taking a link that another tool is actively tracking
+  // would drag its whole price history off that tool; the caller reports it
+  // instead, and names the tool so it's actionable.
+  const r = decideAttach({ id: 10, tool_id: 2, active: true }, 1);
+  assert.equal(r.state, 'conflict');
+  assert.equal(r.id, 10);
+  assert.equal(r.tool_id, 2, 'the caller needs to name the blocking tool');
+});
+
+test('a REMOVED link from another tool is adopted — that is a mis-paste being fixed', () => {
+  // Found by Keith, in use, 2026-07-16: he pasted a link on the wrong tool,
+  // removed it, and couldn't put it on the right one — "already tracked under a
+  // different tool". A mistake he'd already undone was unfixable in the UI.
+  //
+  // This file previously asserted the opposite, reasoning that any cross-tool
+  // move was the silent theft we refuse. That conflated two cases: taking a LIVE
+  // link (theft) and re-filing a REMOVED one (a correction he explicitly asked
+  // for). The history follows, correctly — those snapshots are prices of that
+  // URL, and the URL is the product.
+  const r = decideAttach({ id: 10, tool_id: 2, active: false }, 1);
+  assert.equal(r.state, 'adopt');
+  assert.equal(r.id, 10);
+  assert.equal(r.from_tool_id, 2, 'the caller says where it moved from');
 });
 
 test('ids compare by value across the string/number boundary', () => {

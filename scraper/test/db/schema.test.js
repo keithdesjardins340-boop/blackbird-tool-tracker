@@ -468,6 +468,10 @@ async function attachViaSql(toolId, dealerId, url) {
     await client.query('update tool_listings set active = true where id = $1', [d.id]);
     return d;
   }
+  if (d.state === 'adopt') {
+    await client.query('update tool_listings set active = true, tool_id = $2 where id = $1', [d.id, toolId]);
+    return d;
+  }
   const created = await one(
     `insert into tool_listings (tool_id, dealer_id, product_url, active, source)
      values ($1, $2, $3, true, 'manual') returning id`,
@@ -524,7 +528,7 @@ test('attach: a removed link comes BACK, with its price history', async () => {
   assert.equal(Number(s.best_price), 725.67, 'the old prices came back with it');
 });
 
-test('attach: a link is NEVER moved to another tool', async () => {
+test('attach: a LIVE link is never taken from the tool tracking it', async () => {
   const toolA = await seedTool('Attach: tool A');
   const toolB = await seedTool('Attach: tool B');
   const dealer = await seedDealer('Test conflict dealer');
@@ -543,21 +547,36 @@ test('attach: a link is NEVER moved to another tool', async () => {
   assert.equal(b.best_price, null, "and A's price history did not follow it to B");
 });
 
-test('attach: a removed link belonging to another tool is still a conflict', async () => {
-  // The subtle one: "removed" is not "free". Reviving it onto B would be exactly
-  // the silent move we refuse to make.
-  const toolA = await seedTool('Attach: inactive tool A');
-  const toolB = await seedTool('Attach: inactive tool B');
-  const dealer = await seedDealer('Test inactive conflict dealer');
-  const url = 'https://inactive-conflict.example/87v';
+test('attach: a REMOVED link can be re-filed onto the right tool, history and all', async () => {
+  // The mis-paste Keith actually hit: wrong tool, removed it, then couldn't put
+  // it on the right one. This test previously asserted the refusal — it was
+  // faithfully encoding a rule that was wrong about what he needed.
+  const toolA = await seedTool('Attach: mis-filed tool A');
+  const toolB = await seedTool('Attach: correct tool B');
+  const dealer = await seedDealer('Test adopt dealer');
+  const url = 'https://adopt.example/87v';
 
   const added = await attachViaSql(toolA, dealer, url);
+  await snap(added.id, 725.67);
+  // He notices and removes it from the wrong tool.
   await client.query('update tool_listings set active = false where id = $1', [added.id]);
 
   const moved = await attachViaSql(toolB, dealer, url);
-  assert.equal(moved.state, 'conflict');
+  assert.equal(moved.state, 'adopt');
+  assert.equal(Number(moved.id), Number(added.id), 'the same row moves — no duplicate');
 
   const row = await one('select tool_id, active from tool_listings where id = $1', [added.id]);
-  assert.equal(Number(row.tool_id), Number(toolA));
-  assert.equal(row.active, false, 'and it stays removed');
+  assert.equal(Number(row.tool_id), Number(toolB), 'it now belongs to the right tool');
+  assert.equal(row.active, true, 'and it is tracked again');
+
+  // The price history follows, because those snapshots are prices of THIS URL
+  // and the URL is the product.
+  const b = await marketStatus(toolB);
+  assert.equal(Number(b.best_price), 725.67);
+  const a = await marketStatus(toolA);
+  assert.equal(a.best_price, null, 'and the wrong tool no longer claims it');
+
+  // Still exactly one row for that (dealer, url) — the unique key holds.
+  const rows = await q('select id from tool_listings where dealer_id = $1 and product_url = $2', [dealer, url]);
+  assert.equal(rows.length, 1);
 });

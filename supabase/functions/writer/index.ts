@@ -205,9 +205,10 @@ async function toCad(admin: any, price: number, regular: number | null, currency
 }
 
 // Attach a URL to a tool. The unique key is (dealer_id, product_url), so a link
-// lives in exactly one place: revive it if it's this tool's and was removed, and
-// NEVER move it off another tool. Shared by every op that adds a link, so they
-// all behave the same instead of some throwing a raw duplicate-key error.
+// lives in exactly one place: revive this tool's removed link, ADOPT another
+// tool's removed link (re-filing a mis-paste), and never take one that's live
+// somewhere else. Shared by every op that adds a link, so they all behave the
+// same instead of some throwing a raw duplicate-key error.
 // The decision itself lives in ./attach.js — pure, and covered by tests.
 // deno-lint-ignore no-explicit-any
 async function attachListing(admin: any, toolId: number, dealerId: number, url: string, source = "manual") {
@@ -217,6 +218,16 @@ async function attachListing(admin: any, toolId: number, dealerId: number, url: 
   if (d.state === "conflict" || d.state === "already") return d;
   if (d.state === "revived") {
     const { error } = await admin.from("tool_listings").update({ active: true }).eq("id", d.id);
+    if (error) throw error;
+    return d;
+  }
+  if (d.state === "adopt") {
+    // He removed it from the other tool, so it's unclaimed — move it here, with
+    // its price history, because those snapshots are prices of THIS URL and the
+    // URL is the product. reflagOutliers (run by the caller) re-judges that
+    // history against this tool's other dealers.
+    const { error } = await admin.from("tool_listings")
+      .update({ active: true, tool_id: toolId, source }).eq("id", d.id);
     if (error) throw error;
     return d;
   }
@@ -344,8 +355,8 @@ async function handle(admin: any, op: string, p: Record<string, any>) {
       req(typeof p.product_url === "string" && /^https?:\/\//i.test(p.product_url), "valid product_url required");
       const toolId = asInt(p.tool_id) as number;
       const r = await attachListing(admin, toolId, asInt(p.dealer_id) as number, normalizeUrl(p.product_url));
-      req(r.state !== "conflict", "That link is already tracked under a different tool.");
-      if (r.state === "revived") await reflagOutliers(admin, r.id, toolId);
+      req(r.state !== "conflict", "That link is live on a different tool — remove it there first.");
+      if (r.state === "revived" || r.state === "adopt") await reflagOutliers(admin, r.id, toolId);
       if (asInt(p.cand_id)) await admin.from("map_candidates").update({ confident: true }).eq("id", asInt(p.cand_id));
       return { ok: true, state: r.state };
     }
@@ -364,25 +375,34 @@ async function handle(admin: any, op: string, p: Record<string, any>) {
       const urls = parseLinks(p.links);
       const cache = new Map<string, number>();
       let links_added = 0;    // brand new
-      let links_revived = 0;  // previously removed, tracked again
+      let links_revived = 0;  // previously removed on THIS tool, tracked again
+      let links_adopted = 0;  // re-filed from another tool where it was removed
       let already = 0;        // already tracked on this tool — no-op
-      const conflicts: string[] = []; // the URL belongs to a DIFFERENT tool
+      // A URL that is LIVE on a different tool. Named, so he can go and remove it
+      // there — "already tracked somewhere" with no idea where is a dead end.
+      const conflicts: { url: string; tool: string | null }[] = [];
 
       let reflagged = 0;
       for (const url of urls) {
         const dealerId = await resolveDealer(admin, url, cache);
         if (!dealerId) continue;
         const r = await attachListing(admin, toolId as number, dealerId, url);
-        if (r.state === "conflict") { conflicts.push(url); continue; }
+        if (r.state === "conflict") {
+          const { data: other } = await admin.from("tools").select("name").eq("id", r.tool_id).maybeSingle();
+          conflicts.push({ url, tool: other?.name ?? null });
+          continue;
+        }
         if (r.state === "already") { already++; continue; }
-        if (r.state === "revived") {
-          links_revived++;
+        if (r.state === "revived" || r.state === "adopt") {
+          if (r.state === "adopt") links_adopted++; else links_revived++;
+          // Both bring old prices back with them; re-judge that history against
+          // THIS tool's other dealers.
           reflagged += await reflagOutliers(admin, r.id, toolId as number);
           continue;
         }
         links_added++;
       }
-      return { tool_id: toolId, links_added, links_revived, already, conflicts, reflagged };
+      return { tool_id: toolId, links_added, links_revived, links_adopted, already, conflicts, reflagged };
     }
     case "trigger_scrape": {
       // Kick the scrape workflow via GitHub's workflow_dispatch (§3.4). The PAT

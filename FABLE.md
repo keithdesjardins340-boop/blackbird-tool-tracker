@@ -135,8 +135,13 @@ the writer token, so JWT verification would 401 every write in the app.
 - **Colour only where it carries meaning** (tier priority, status, price direction,
   chart series); chrome stays monochrome. Chart palettes are CVD-validated — if you
   change one, re-validate it against the `#ffffff` surface (§7 says how, with no Node).
-- **Every op that attaches a link must go through `attachListing()`** (revive a removed
-  link, no-op if present, report a conflict, never move a link between tools).
+- **Every op that attaches a link must go through `attachListing()`** — one decision in
+  `writer/attach.js`: revive this tool's removed link, no-op if already here, **adopt
+  another tool's REMOVED link** (that's a mis-paste being re-filed, and the history
+  follows because the snapshots are prices of that URL), and refuse a link that's
+  **live** on another tool, naming it so he can go remove it. The live/removed line is
+  the fix for a real dead end: it once refused ANY cross-tool attach, so a link pasted
+  onto the wrong tool could never be moved to the right one.
 - **Don't hand-bump `CACHE` in `sw.js`** — `deploy-web.yml` stamps the commit SHA into
   it. Don't reword that line either; the deploy fails if its `sed` matches nothing.
 - **Shared thresholds live in `web/js/constants.js`** (`DEAL_PCT`, `STALE_MANUAL_DAYS`,
@@ -168,6 +173,14 @@ Every one of these has a test now. Add to them rather than around them.
   `active`, so a removed link stayed visible *and* could win BEST.
 - **`upsert(…ignoreDuplicates)` made removed links un-re-addable** — the row still
   existed with `active=false`, so the insert silently did nothing.
+- **A safety rule made a mis-paste unfixable.** `attachListing` refused every
+  cross-tool attach to prevent silently moving a link (and its history) between
+  tools. Correct for a LIVE link; wrong for a REMOVED one — Keith pasted a link on
+  the wrong tool, removed it, and the app still said "already tracked under a
+  different tool", with no way out but SQL. A test asserted the refusal, so the
+  suite defended the bug. *Lesson: a rule that protects data can still be wrong about
+  what the user is asking for; "he already undid it" is not the case the rule was
+  written for.*
 - **A stale hand-capture could hold BEST.** CT/Amazon prices only refresh when he
   sweeps with the bookmarklet, so a 3-week-old capture could beat today's real price.
   `tool_market_status` drops a manual capture from BEST past `STALE_MANUAL_DAYS`; it

@@ -1351,7 +1351,7 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS, SEARCH_FROM_TOOLS } f
         await loadAll();
         const created = state.tools.find((x) => String(x.tool_id) === String(res.tool_id));
         if (created) openDetail(res.tool_id); else closeDetail();
-        const tracked = (res.links_added || 0) + (res.links_revived || 0);
+        const tracked = (res.links_added || 0) + (res.links_revived || 0) + (res.links_adopted || 0);
         if (tracked > 0 && confirm(`Added with ${tracked} link${tracked > 1 ? 's' : ''}. Run a price scrape now? (prices also update on the next scheduled run.)`)) {
           triggerScrape(null);
         }
@@ -1382,7 +1382,7 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS, SEARCH_FROM_TOOLS } f
     msg.textContent = 'Adding…';
     try {
       const res = await SB.writeApi('add_tool_with_links', { tool_id: toolId, links });
-      const tracked = (res.links_added || 0) + (res.links_revived || 0);
+      const tracked = (res.links_added || 0) + (res.links_revived || 0) + (res.links_adopted || 0);
       if (tracked > 0) {
         // A link landed for the tool a lead pointed at → that lead is spent.
         // Marked here, not on the button press: "accepted" should mean the link
@@ -1396,9 +1396,19 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS, SEARCH_FROM_TOOLS } f
                the link would not be. Next load re-reads the real state. */
           });
         }
+        // Moving a link between tools takes its price history with it — say so,
+        // rather than letting the history quietly change tools.
+        if (res.links_adopted) {
+          showToast(`Moved ${res.links_adopted} link${res.links_adopted === 1 ? '' : 's'} here, with its price history`);
+        }
         openDetail(toolId); // refresh the dealer list; price lands on next scrape
       } else if (res.conflicts && res.conflicts.length) {
-        msg.textContent = 'That link is already tracked under a different tool.';
+        // Name the blocking tool: "tracked somewhere" with no idea where is a
+        // dead end — this is the exact wall a mis-paste used to hit.
+        const c = res.conflicts[0];
+        msg.textContent = c.tool
+          ? `That link is live on “${c.tool}”. Remove it there, then add it here.`
+          : 'That link is live on a different tool. Remove it there, then add it here.';
       } else {
         msg.textContent = 'Already tracked on this tool — nothing to add.';
       }
