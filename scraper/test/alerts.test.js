@@ -5,7 +5,19 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { shouldAlert, ALERT_REDROP_PCT, ALERT_REPEAT_DAYS } from '../src/alerts.js';
+
+test('importing alerts.js does not run it, or touch the database', () => {
+  // This file importing alerts.js is itself the test — supabase.js calls
+  // process.exit(1) with no env vars, so a top-level import of it would kill
+  // this whole test file. (It did. That's why the guard exists.)
+  const src = readFileSync(fileURLToPath(new URL('../src/alerts.js', import.meta.url)), 'utf8');
+  assert.ok(!/^import .*['"]\.\/supabase\.js['"]/m.test(src),
+    'supabase.js must stay a lazy import inside main()');
+  assert.match(src, /invokedDirectly/, 'main() must only run when invoked as a script');
+});
 
 const now = Date.parse('2026-07-16T12:00:00Z');
 const agoDays = (n) => new Date(now - n * 86400000).toISOString();

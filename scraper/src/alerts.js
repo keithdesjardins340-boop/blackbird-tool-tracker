@@ -13,8 +13,11 @@
 //   node src/alerts.js              # after a scrape: target hits + real drops
 //   node src/alerts.js --run-failed # the run itself broke
 
-import { supabase } from './supabase.js';
+import { pathToFileURL } from 'node:url';
 import { DEAL_PCT } from '../../web/js/constants.js';
+// NOTE: supabase.js is imported lazily inside main(). It exits the process when
+// SUPABASE_* are absent, so importing it at the top would kill any test that
+// imports shouldAlert() from here — the rule under test would be untestable.
 
 /** Re-alert the same tool only if the price dropped at least this much further. */
 export const ALERT_REDROP_PCT = 2;
@@ -60,10 +63,11 @@ async function main() {
     console.log('NTFY_TOPIC not set — skipping alerts.');
     return;
   }
-
   if (process.argv.includes('--run-failed')) {
     // A silently broken scraper is the worst failure mode here: prices quietly
     // stop being true while the app keeps showing them with confidence.
+    // Deliberately before the database import: "the run failed" is exactly the
+    // moment the database might be why, and this alert must still get out.
     await push(topic, {
       title: 'Blackbird: scrape run failed',
       message: 'The price scrape did not finish. Prices may be stale until the next run.',
@@ -73,6 +77,7 @@ async function main() {
     return;
   }
 
+  const { supabase } = await import('./supabase.js');
   const { data: tools, error } = await supabase
     .from('tool_market_status')
     .select('tool_id, name, best_price, best_dealer, target_price, pct_vs_avg_90d, owned')
@@ -117,8 +122,13 @@ async function main() {
   console.log(sent.length ? `Sent ${sent.length} alert(s):\n- ${sent.join('\n- ')}` : 'No new alerts.');
 }
 
-main().catch((e) => {
-  // Never fail the workflow over a notification — the prices are already saved,
-  // and a red run for a missed push would be its own kind of false alarm.
-  console.error('alerts failed:', e?.message || e);
-});
+// Only run when invoked as a script. Importing this module (the tests import
+// shouldAlert) must not fire off notifications or touch the database.
+const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (invokedDirectly) {
+  main().catch((e) => {
+    // Never fail the workflow over a notification — the prices are already saved,
+    // and a red run for a missed push would be its own kind of false alarm.
+    console.error('alerts failed:', e?.message || e);
+  });
+}
