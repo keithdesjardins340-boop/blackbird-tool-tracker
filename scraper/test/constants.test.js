@@ -11,6 +11,8 @@ import {
   DEAL_PCT, STALE_MANUAL_DAYS, PRICE_SANITY_MAX_RATIO, PRICE_SANITY_MIN_RATIO,
 } from '../../web/js/constants.js';
 
+const src = (p) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), 'utf8');
+
 test('the scraper can import the dashboard\'s constants', () => {
   // If this path ever breaks, report.js dies at import time and the run report
   // vanishes — worth catching here rather than in a 01:00 UTC cron.
@@ -33,7 +35,6 @@ test('nobody re-hardcoded the threshold behind the constant\'s back', () => {
   // The whole item is "one definition". A literal -10 creeping back into
   // report.js or app.js is the drift this file exists to prevent, and it would
   // otherwise pass every other test in here.
-  const src = (p) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), 'utf8');
   for (const path of ['../src/report.js', '../../web/js/app.js']) {
     const code = src(path).replace(/^\s*(\/\/.*|\*.*|\/\*.*)$/gm, ''); // ignore comments
     assert.ok(
