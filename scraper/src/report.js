@@ -31,9 +31,14 @@ async function main() {
     .from('tool_listings')
     .select('id, tool:tools(name), dealer:dealers(name)')
     .eq('active', true);
-  const { data: freshSnaps } = await supabase
-    .from('price_snapshots').select('listing_id').gte('scraped_at', since);
-  const fresh = new Set((freshSnaps || []).map((s) => s.listing_id));
+  // listing_latest_price is ONE row per listing, so this can't outgrow the Data
+  // API's silent 1000-row cap the way `select listing_id from price_snapshots`
+  // did — that pulled every snapshot in the window (2 per listing per day) and
+  // would have started inventing "unpriced links" out of truncation once the
+  // list got big. A report that cries wolf is worse than no report.
+  const { data: latest } = await supabase
+    .from('listing_latest_price').select('listing_id, scraped_at').gte('scraped_at', since);
+  const fresh = new Set((latest || []).map((s) => s.listing_id));
   const unpriced = (activeListings || []).filter((l) => !fresh.has(l.id));
 
   const L = [];

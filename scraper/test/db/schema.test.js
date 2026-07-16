@@ -341,6 +341,63 @@ test('listing_latest_price exposes parse_via, so the dashboard can mirror the ru
   assert.ok(def.includes('parse_via'), 'the detail overlay needs parse_via to agree with the view');
 });
 
+// ---- listing_spark: one row per listing, or the 1000-row cap eats it ---------
+
+test('listing_spark returns ONE row per listing, not one per snapshot', async () => {
+  // The whole point. The Data API silently caps responses at 1000 rows, so the
+  // old approach (raw snapshots, grouped in JS) broke at ~6 priced tools once
+  // history built up. One row per listing keeps a 295-tool list well under.
+  const tool = await seedTool('87V Max (spark)');
+  const d = await seedDealer('Test spark dealer');
+  const l = await seedListing(tool, d, 'https://spark.example/87v');
+  for (let i = 0; i < 40; i++) await snap(l, 700 + i, { hoursAgo: i * 12 });
+
+  const rows = await q('select * from listing_spark where listing_id = $1', [l]);
+  assert.equal(rows.length, 1, '40 snapshots must collapse to a single row');
+  assert.ok(Array.isArray(rows[0].prices));
+});
+
+test('listing_spark caps the points it returns', async () => {
+  // A 96px sparkline can't resolve more than a few dozen points; shipping 180
+  // per tool to a phone is payload for nothing.
+  const tool = await seedTool('87V Max (spark cap)');
+  const d = await seedDealer('Test spark cap dealer');
+  const l = await seedListing(tool, d, 'https://sparkcap.example/87v');
+  for (let i = 0; i < 40; i++) await snap(l, 700 + i, { hoursAgo: i * 12 });
+
+  const row = await one('select prices from listing_spark where listing_id = $1', [l]);
+  assert.ok(row.prices.length <= 30, `expected <=30 points, got ${row.prices.length}`);
+});
+
+test('listing_spark keeps the NEWEST points, in chronological order', async () => {
+  // Two ways to get this wrong, both silent: keep the oldest (a chart that stops
+  // before today) or return them backwards (a trend pointing the wrong way).
+  const tool = await seedTool('87V Max (spark order)');
+  const d = await seedDealer('Test spark order dealer');
+  const l = await seedListing(tool, d, 'https://sparkorder.example/87v');
+  // 40 points, oldest = 100, newest = 139.
+  for (let i = 0; i < 40; i++) await snap(l, 100 + (39 - i), { hoursAgo: i * 12 });
+
+  const row = await one('select prices from listing_spark where listing_id = $1', [l]);
+  const prices = row.prices.map(Number);
+  assert.equal(prices[prices.length - 1], 139, 'the last point must be the most recent price');
+  assert.equal(prices[0], 110, 'and the window must be the newest 30, not the oldest');
+  assert.deepEqual(prices, [...prices].sort((a, b) => a - b), 'chronological here means ascending');
+});
+
+test('listing_spark leaves flagged reads out', async () => {
+  // Same rule as every other stat: a $135 add-on misread is a parser mistake,
+  // not price history, and it must not spike the card's trend line.
+  const tool = await seedTool('87V Max (spark anomaly)');
+  const d = await seedDealer('Test spark anomaly dealer');
+  const l = await seedListing(tool, d, 'https://sparkanom.example/87v');
+  await snap(l, 725.67, { hoursAgo: 2 });
+  await snap(l, 135.00, { hoursAgo: 1, anomaly: true });
+
+  const row = await one('select prices from listing_spark where listing_id = $1', [l]);
+  assert.deepEqual(row.prices.map(Number), [725.67]);
+});
+
 // ---- purchase capture -------------------------------------------------------
 
 test('a recorded purchase surfaces with the dealer he bought from', async () => {

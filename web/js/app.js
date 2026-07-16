@@ -151,14 +151,19 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS, SEARCH_FROM_TOOLS } f
       const listingIds = uniq(state.tools.map((t) => t.best_listing_id).filter((x) => x != null));
       state.sparks = {};
       if (listingIds.length) {
-        const since = new Date(Date.now() - 90 * 864e5).toISOString();
-        // is_anomaly=false: a flagged read is a parser mistake, not price history —
-        // it must not spike the sparkline any more than it counts toward stats.
+        // One row per listing, holding a ready-made array of recent prices — the
+        // 90-day window and the is_anomaly filter live in the view (0021).
+        //
+        // This used to pull the raw snapshots and group them here, which broke
+        // twice over as the list grew: the Data API caps responses at 1000 rows
+        // SILENTLY, and ~180 snapshots per listing per 90 days meant the cap hit
+        // at about six priced tools — dropping the NEWEST rows, because it was
+        // ordered ascending. Sparklines would have quietly stopped short of today.
         const rows = await SB.select(
-          'price_snapshots',
-          `select=listing_id,price_cad,scraped_at&listing_id=in.(${listingIds.join(',')})&scraped_at=gte.${since}&is_anomaly=eq.false&order=scraped_at.asc`
+          'listing_spark',
+          `select=listing_id,prices&listing_id=in.(${listingIds.join(',')})`
         );
-        for (const r of rows || []) (state.sparks[r.listing_id] ||= []).push(Number(r.price_cad));
+        for (const r of rows || []) state.sparks[r.listing_id] = (r.prices || []).map(Number);
       }
       state.offline = false; state.lastGoodAt = Date.now();
       // The server's `owned` is authoritative EXCEPT where a queued tick hasn't
@@ -1004,8 +1009,14 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS, SEARCH_FROM_TOOLS } f
       const ids = (listings || []).map((l) => l.id);
       let snaps = [];
       if (ids.length) {
+        // Newest-first + an explicit limit, then reversed back into chronological
+        // order. The Data API silently caps responses at 1000 rows, so this query
+        // WILL be truncated once a tool has a long history — fetching descending
+        // means what gets dropped is ancient history rather than this morning's
+        // price. Everything downstream still sees oldest→newest.
         snaps = await SB.select('price_snapshots',
-          `select=listing_id,price_cad,regular_price_cad,on_sale,in_stock,scraped_at,currency,price_original,fx_rate,is_anomaly,parse_via&listing_id=in.(${ids.join(',')})&order=scraped_at.asc`) || [];
+          `select=listing_id,price_cad,regular_price_cad,on_sale,in_stock,scraped_at,currency,price_original,fx_rate,is_anomaly,parse_via&listing_id=in.(${ids.join(',')})&order=scraped_at.desc&limit=1000`) || [];
+        snaps.reverse();
       }
       const byListing = {};
       for (const s of snaps) (byListing[s.listing_id] ||= []).push(s);

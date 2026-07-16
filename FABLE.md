@@ -143,6 +143,13 @@ load-bearing: auth is the writer token, so JWT verification would 401 every writ
   `active`, so a removed link stayed visible *and* could win the BEST tag.
 - **`upsert(…ignoreDuplicates)` made removed links un-re-addable** — the row still
   existed with `active=false`, so the insert silently did nothing.
+- **The Data API caps every response at 1000 rows, SILENTLY** (Supabase → Data API →
+  Settings → Max rows). No error, just fewer rows. The sparkline query pulled ~180
+  snapshots per listing per 90 days, so it would have broken at ~6 priced tools —
+  ascending order, so the rows lost were *today's*. Fixed with the `listing_spark`
+  view (one row per listing, 0021). **Any read that grows with the list or with time
+  must page (`backup.js`), collapse server-side (`listing_spark`,
+  `listing_latest_price`), or fetch `desc` + `limit` so truncation drops the OLDEST.**
 
 ## 7. Verifying, given the constraints
 
