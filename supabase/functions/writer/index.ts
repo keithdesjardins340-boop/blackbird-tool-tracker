@@ -290,7 +290,20 @@ async function handle(admin: any, op: string, p: Record<string, any>) {
       const fields: Record<string, unknown> = { owned, updated_at: new Date().toISOString() };
       if (owned) {
         fields.purchase_price_cad = Number.isFinite(price) && price > 0 ? price : null;
-        fields.purchase_listing_id = asInt(p.purchase_listing_id);
+        // Verify the listing still exists before pointing at it. A tick queued
+        // offline can arrive hours later, and if he deleted that dealer in the
+        // meantime the row is gone (delete_dealer cascades) — the FK would then
+        // reject the whole write, and the offline queue keeps failed items, so
+        // ONE dead reference would block every checkmark behind it.
+        // Losing *where* he bought it beats that; the price still lands.
+        const wantListing = asInt(p.purchase_listing_id);
+        let listingId: number | null = null;
+        if (wantListing) {
+          const { data: pl } = await admin.from("tool_listings")
+            .select("id").eq("id", wantListing).maybeSingle();
+          listingId = pl ? wantListing : null;
+        }
+        fields.purchase_listing_id = listingId;
         // Trust the client's timestamp when it sends one: a queued tick happened
         // when he TAPPED it, in the aisle, not whenever the queue drained.
         fields.purchased_at = (fields.purchase_price_cad != null || fields.purchase_listing_id != null)

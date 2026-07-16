@@ -157,36 +157,29 @@ its place: it's the answer to "why does fluke.com say a different number than th
 `$893.63 · Jul 16 · converted from 635.99 USD @ 1.4051` on each dealer row.
 Verified in the browser against a seeded USD listing. Nothing to build.
 
-### 2.9 Known edge: a deleted dealer can poison the offline queue
-Found in review, deliberately not fixed yet — the fix is one line, but shipping it
-means another hand-copy of the whole writer (see 2.8), and the odds are low.
-
+### 2.9 A deleted dealer could poison the offline queue — ✅ fixed
 **The case:** he records a purchase offline (`purchase_listing_id = N`), then deletes
 that dealer before reconnecting. `delete_dealer` cascades the listing away, so the
-queued replay sets `purchase_listing_id` to a row that no longer exists → FK violation
-→ the write fails. `flush()` keeps failed items on purpose (losing his checkmark to
-tidy the queue would be worse), so that one entry blocks the queue behind it, and the
-badge turns red with a Postgres error he can't act on.
+queued replay pointed at a row that no longer exists → FK violation → the write fails.
+`flush()` keeps failed items on purpose (losing his checkmark to tidy the queue would
+be worse), so one dead reference would block every checkmark behind it, and the badge
+would turn red with a Postgres error he can't act on.
 
-**The fix, next time the writer is deployed:** in `toggle_owned`, check the listing
-exists before setting `purchase_listing_id`, and null it if it doesn't. Losing *where*
-he bought it beats blocking every later checkmark — and the price, which is the part
-that matters, survives either way. (`tools.purchase_listing_id` is already
-`ON DELETE SET NULL` for the same reason.)
+**Fixed** in `toggle_owned`: check the listing still exists before pointing at it, and
+null it if it doesn't. Losing *where* he bought it beats blocking every later
+checkmark — the price, which is the part that matters, lands either way.
+(`tools.purchase_listing_id` is `ON DELETE SET NULL` for the same reason.)
 
-### 2.8 Deploy the writer from CI, not by hand
-**Problem.** `supabase/functions/writer/` is deployed by copying its source into a
-deploy call. It's ~600 lines, and it is the ONLY write path the browser has: a
-hand-copy is a chance to corrupt it, and nothing checks that what's deployed matches
-what's in the repo. The repo is the source of truth everywhere else here; for this
-one file it's a convention held up by care.
-**Change.** A `deploy-writer.yml` on push to `main` (paths: `supabase/functions/**`)
-running the Supabase CLI (`supabase functions deploy writer --project-ref …`), with a
-`SUPABASE_ACCESS_TOKEN` repo secret. Keep `verify_jwt=false` — auth is the writer
-token, per the security model. **Done when** a push touching the function redeploys
-it with no hand-copying, and the deployed version matches the commit.
-**Needs him:** a Supabase access token minted and added as a GitHub secret. Costs
-nothing, but it's his credential — never read or paste it.
+### 2.8 Deploy the writer from CI, not by hand — ✅ done
+**Problem.** The writer was deployed by copying ~600 lines of source into a deploy
+call. It is the ONLY write path the browser has: a hand-copy is a chance to corrupt
+it, nothing checked that what's deployed matched the repo, and twice it pushed a fix
+into "later" purely because deploying meant retyping the file.
+**Done:** `deploy-writer.yml` (push to `main`, paths `supabase/functions/**`, plus
+manual dispatch) runs the Supabase CLI with the `SUPABASE_ACCESS_TOKEN` repo secret.
+`--no-verify-jwt` is required and load-bearing — auth is the writer token, so JWT
+verification would 401 every write; a test guards the flag. A missing token fails the
+run loudly rather than skipping.
 
 ---
 
@@ -208,16 +201,21 @@ sanctioned path for blocked dealers.
 
 ## 5. Waiting on him — nothing else is
 
-These are the only items an assistant can't finish. The first two are credentials
-(his to mint; never read or paste one); the last two cost money or hardware.
+These are the only items an assistant can't finish. The first is a credential (his to
+mint; never read or paste one); the rest cost money or hardware.
 
 1. **`NTFY_TOPIC` repo secret** (2.1) — deal alerts are built, tested and shipped
    dark. They do nothing until the secret exists and he subscribes. README §"Deal
    alerts on your phone" has the steps.
-2. **`SUPABASE_ACCESS_TOKEN` repo secret** (2.8) — so the writer deploys from CI
-   instead of being hand-copied. Costs nothing.
-3. **Home residential proxy** for HD auto-refresh (needs an always-on device of his).
-4. **Zyte / Keepa** paid coverage. Everything else in this doc: act, verify, report.
+2. **Home residential proxy** for HD auto-refresh (needs an always-on device of his).
+3. **Zyte / Keepa** paid coverage. Everything else in this doc: act, verify, report.
+
+`SUPABASE_ACCESS_TOKEN` (2.8) is **done** — he added it 2026-07-16.
+
+> **When asking him for any secret, put "don't paste it to me — mint it, put it
+> straight in the form, then say it's in" on EVERY item in the message.** He pastes
+> credentials into chat to unblock things; it has happened twice. A warning on only
+> one of two asks is how the second one ends up in a transcript.
 
 ## 6. Suggested order
 

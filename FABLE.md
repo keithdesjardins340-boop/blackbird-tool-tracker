@@ -73,6 +73,13 @@ read-only). Writes go through the writer function, authorized by a **writer toke
 (in `app_secrets`, pasted per-device into Settings). The GitHub PAT for the
 "Run price scrape now" button lives in the **`GH_PAT` function secret**.
 **Never read, move, or paste credentials** — the platform will stop you, correctly.
+He will sometimes paste one into chat to unblock you: **don't use it, tell him to
+revoke it** (a secret in a transcript is burned even once it's also in the right
+place), and when asking for one, say "don't send it to me" on *every* ask.
+
+The writer is deployed by **`deploy-writer.yml`** on any push touching
+`supabase/functions/**` — never by hand any more. `--no-verify-jwt` there is
+load-bearing: auth is the writer token, so JWT verification would 401 every write.
 
 ## 4. The loop
 
