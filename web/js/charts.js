@@ -1,9 +1,13 @@
 // Dependency-free SVG charts: sparkline (watchlist) + multi-series line chart
 // (tool detail). All inline SVG so it works offline with no libraries.
 (function () {
-  // Monochrome ramp — dealers are distinguished by shade (and dash, below).
-  const COLORS = ['#09090b', '#71717a', '#a1a1aa', '#3f3f46', '#52525b', '#d4d4d8'];
-  const DASHES = ['', '', '5,3', '2,3', '8,3', '2,2'];
+  // Categorical palette for dealer series, assigned in FIXED order (never cycled
+  // by rank) so a dealer keeps its colour as series come and go. Validated against
+  // the #ffffff chart surface: worst adjacent CVD ΔE 24.2 (target >=12). Two slots
+  // (aqua/yellow) fall under 3:1 contrast, so the dash patterns + the legend below
+  // the chart are REQUIRED secondary encoding — never remove them.
+  const COLORS = ['#2a78d6', '#1baf7a', '#eda100', '#008300', '#4a3aa7', '#e34948'];
+  const DASHES = ['', '5,3', '2,3', '8,3', '2,2', '6,2,2,2'];
 
   function sparkline(values, { w = 96, h = 28, stroke = '#09090b' } = {}) {
     const pts = values.filter((v) => v != null);

@@ -46,7 +46,15 @@ permission.
   evasion; the escalation path for blocked dealers is a paid proxy or the human
   bookmarklet, never stealth.
 - **Never break the manual paste path** (a pasted URL must always price via the
-  generic adapter). Keep the **light black-and-white theme** (no colour creep).
+  generic adapter).
+- **Light theme; colour only where it carries meaning.** Chrome stays monochrome.
+  Colour is reserved for three jobs: **buy-order priority** (an ordinal blue ramp,
+  `--tier-1/2/3`, darker = buy sooner), **status** (`--good/--warn/--crit`, always
+  beside its word — never colour alone), and **good/bad price movement**. Chart
+  series use the fixed categorical palette in `charts.js` — assigned in order,
+  never cycled — and its dash patterns + legend are **required** secondary encoding
+  (two slots are under 3:1 on white). Re-validate any palette change with the
+  dataviz validator against the `#ffffff` surface before shipping.
 - **Never seed `owned`** (owner checks tools off as bought). **Never auto-create
   tools the owner didn't add** (CSV import excepted).
 
@@ -161,8 +169,12 @@ a localStorage cache with a stale-data bar), **Prices**, **Deals**, **Health**,
 **Settings** (writer token, CSV import, **CSV/JSON export**, **Run price scrape now**).
 Per-tool detail: price-history chart, all dealer prices sorted cheapest-first with a
 **BEST** tag, **Add dealer links** (multi-line paste). **＋** opens **quick-add**
-(tool + links). Bookmarklet **#import=** opens a save-price modal. Clean B&W light
-theme; grayscale charts. A service-worker **update toast** appears after a deploy.
+(tool + links) with a fixed **3-tier priority picker** (Tier 1 buy-first → Tier 3),
+defaulting to Tier 1 — the checklist groups into those tier windows in buy order,
+colour-coded by the priority ramp (anything with an unknown/absent tier falls into an
+"Unassigned" window at the end). Bookmarklet **#import=** opens a save-price modal.
+Light theme with meaningful colour (see constraints); colour-coded chart series.
+A service-worker **update toast** appears after a deploy.
 
 ## Data / reset
 

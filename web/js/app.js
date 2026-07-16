@@ -99,12 +99,15 @@
 
   function filtersBar() {
     const cats = uniq(state.tools.map((t) => t.category));
-    const tiers = uniq(state.tools.map((t) => t.tier));
+    // Always offer the three buy-order tiers — even on an empty list — plus any
+    // other tier value that actually exists in the data (legacy / imported).
+    const tierKeys = TIERS.map((x) => x.key);
+    const tiers = [...tierKeys, ...uniq(state.tools.map((t) => t.tier)).filter((v) => v && !tierKeys.includes(v))];
     const opt = (v, sel) => `<option value="${esc(v)}"${v === sel ? ' selected' : ''}>${esc(v || 'All')}</option>`;
     const f = state.filters;
     return `<div class="filters">
       <input type="search" id="fq" placeholder="Search name / SKU…" value="${esc(f.q)}" />
-      <select id="ftier"><option value="">Phase: All</option>${tiers.map((v) => opt(v, f.tier)).join('')}</select>
+      <select id="ftier"><option value="">Tier: All</option>${tiers.map((v) => opt(v, f.tier)).join('')}</select>
       <select id="fcat"><option value="">Category: All</option>${cats.map((v) => opt(v, f.category)).join('')}</select>
       <select id="fowned">
         <option value="">Owned: All</option>
@@ -533,7 +536,13 @@
     detail.classList.remove('hidden'); detail.setAttribute('aria-hidden', 'false');
     const v = (x) => esc(x ?? '');
     const cats = uniq(state.tools.map((x) => x.category));
-    const tiers = uniq(state.tools.map((x) => x.tier));
+    // Priority tier is a fixed 3-way picker (new tools default to Tier 1 — buy
+    // first), so a tool always lands in a real buy-order window. An existing tool
+    // on some other tier value keeps it as an extra option rather than being
+    // silently re-tiered on edit.
+    const curTier = t ? (t.tier || '') : TIERS[0].key;
+    const tierOpts = TIERS.map((x) => `<option value="${esc(x.key)}"${curTier === x.key ? ' selected' : ''}>${esc(x.label)}</option>`).join('')
+      + (curTier && !TIERS.some((x) => x.key === curTier) ? `<option value="${esc(curTier)}" selected>${esc(curTier)}</option>` : '');
     detailBody.innerHTML = `
       <h2>${t ? 'Edit tool' : 'Add a tool'}</h2>
       <div class="form-grid">
@@ -542,7 +551,7 @@
         <label>Brand<input id="f_brand" value="${v(t?.brand)}" /></label>
         <label class="full">Model / spec text<input id="f_model" value="${v(t?.model_number)}" /></label>
         <label>Category<input id="f_cat" list="dl_cat" value="${v(t?.category)}" /></label>
-        <label>Phase / tier<input id="f_tier" list="dl_tier" value="${v(t?.tier)}" /></label>
+        <label>Priority tier<select id="f_tier">${tierOpts}</select></label>
         <label>Quantity<input id="f_qty" type="number" min="1" value="${t?.quantity ?? 1}" /></label>
         <label>Target price<input id="f_target" type="number" step="0.01" value="${t?.target_price ?? ''}" /></label>
         <label class="full">Notes<textarea id="f_notes" rows="2">${v(t?.notes)}</textarea></label>
@@ -550,7 +559,6 @@
         ${!t ? '<div id="f_links_note" class="note warn" style="grid-column:1/-1"></div>' : ''}
       </div>
       <datalist id="dl_cat">${cats.map((c) => `<option value="${esc(c)}">`).join('')}</datalist>
-      <datalist id="dl_tier">${tiers.map((c) => `<option value="${esc(c)}">`).join('')}</datalist>
       <div class="form-actions">
         <button class="btn" id="f_save">${t ? 'Save changes' : 'Create tool'}</button>
         <button class="btn secondary" id="f_cancel">Cancel</button>

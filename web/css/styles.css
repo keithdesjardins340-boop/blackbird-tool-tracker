@@ -1,6 +1,9 @@
-/* Blackbird Tool Tracker — clean black & white (light) theme.
-   Monochrome by design: white surfaces, near-black ink, hairline grays.
-   Meaning is carried by fill vs. outline and weight, not colour. */
+/* Blackbird Tool Tracker — light theme: white surfaces, near-black ink, hairline
+   grays. Colour is used sparingly and only where it CARRIES MEANING: buy-order
+   priority (tiers), status (health), and good/bad price movement. Chrome stays
+   monochrome so the colour that is there actually means something.
+   Palettes are the validated data-viz reference set (CVD-checked against the
+   #ffffff surface); status colour always ships with a label, never colour alone. */
 :root {
   --bg: #ffffff;
   --bg-2: #fafafa;
@@ -12,9 +15,24 @@
   --muted: #71717a;
   --ink: #09090b;        /* primary black (buttons, fills) */
   --accent: #09090b;
-  --green: #09090b;      /* legacy names kept mono so old refs stay on-brand */
-  --amber: #52525b;
-  --red: #09090b;
+
+  /* Status (fixed palette). *-ink steps are the text-safe (>=4.5:1) variants;
+     the plain step is for fills/dots that sit beside a text label. */
+  --good: #0ca30c;
+  --good-ink: #006300;
+  --warn: #fab219;
+  --warn-ink: #7a4f00;
+  --crit: #d03b3b;
+
+  /* Buy-order priority ramp — ONE blue hue, light->dark = Tier 3 -> Tier 1.
+     Ordinal ramp (validated: monotone L, light end 2.11:1 on white). */
+  --tier-1: #1c5cab;
+  --tier-2: #3987e5;
+  --tier-3: #86b6ef;
+
+  --green: var(--good-ink);   /* legacy names now map to the real semantic steps */
+  --amber: var(--warn-ink);
+  --red: var(--crit);
   --radius: 14px;
   --maxw: 900px;
   --shadow: 0 1px 2px rgba(9, 9, 11, .05), 0 1px 1px rgba(9, 9, 11, .04);
@@ -106,15 +124,16 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 16px 14px 48px; }
 .card-bottom { display: flex; align-items: center; justify-content: space-between; margin-top: 11px; gap: 10px; }
 .badges { display: flex; flex-wrap: wrap; gap: 6px; }
 .badge { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--muted); background: var(--card); letter-spacing: .2px; }
-/* Strong signals get a solid black fill; secondary states stay outlined. */
-.badge.deal, .badge.low { color: #fff; background: var(--ink); border-color: var(--ink); }
-.badge.sale { color: var(--text); border-color: var(--text); }
-.badge.target { color: var(--text); border-color: var(--line-2); }
-.badge.oos { color: var(--muted); background: var(--card-2); border-color: var(--line); }
+/* Good news (a deal / all-time low / on sale) is green; out-of-stock reads red.
+   Every badge still carries its own word, so colour is reinforcement not meaning. */
+.badge.deal, .badge.low { color: #fff; background: var(--good-ink); border-color: var(--good-ink); }
+.badge.sale { color: var(--good-ink); border-color: var(--good-ink); }
+.badge.target { color: var(--good-ink); border-color: var(--good-ink); }
+.badge.oos { color: var(--crit); background: var(--card-2); border-color: var(--line); }
 
 .delta { font-weight: 700; font-size: 13px; color: var(--muted); }
-.delta.up { color: var(--muted); }
-.delta.down { color: var(--ink); }
+.delta.up { color: var(--crit); }        /* price went up — bad for a buyer */
+.delta.down { color: var(--good-ink); }  /* price dropped — good */
 .delta.flat { color: var(--muted); }
 
 .spark { display: block; }
@@ -144,10 +163,10 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 16px 14px 48px; }
   display: flex; justify-content: space-between; align-items: center; gap: 10px;
   padding: 11px 13px; background: var(--card); border: 1px solid var(--line); border-radius: 11px; margin-bottom: 8px;
 }
-.dealer-row.best { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.dealer-row.best { border-color: var(--good-ink); box-shadow: inset 0 0 0 1px var(--good-ink); }
 .dealer-row a { color: var(--ink); text-decoration: none; font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--line-2); }
 .dealer-row a:hover { border-color: var(--ink); }
-.best-tag { font-size: 10px; font-weight: 800; color: #fff; background: var(--ink); border-radius: 999px; padding: 1px 7px; vertical-align: middle; letter-spacing: .4px; }
+.best-tag { font-size: 10px; font-weight: 800; color: #fff; background: var(--good-ink); border-radius: 999px; padding: 1px 7px; vertical-align: middle; letter-spacing: .4px; }
 .verify-tag { font-size: 10px; font-weight: 700; color: var(--muted); border: 1px dashed var(--line-2); border-radius: 999px; padding: 1px 7px; vertical-align: middle; }
 .dealer-actions { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
 .link-x { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 8px; width: 28px; height: 28px; cursor: pointer; font-size: 13px; transition: all .12s; }
@@ -171,20 +190,22 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 16px 14px 48px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin: 10px 0 16px; }
 .form-grid label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); font-weight: 600; }
 .form-grid label.full { grid-column: 1 / -1; }
-.form-grid input, .form-grid textarea {
+.form-grid input, .form-grid textarea, .form-grid select {
   background: var(--card); color: var(--text); border: 1px solid var(--line);
   border-radius: 10px; padding: 10px 11px; font-size: 14px; font-family: inherit;
 }
-.form-grid input:focus, .form-grid textarea:focus { outline: none; border-color: var(--ink); }
+.form-grid input:focus, .form-grid textarea:focus, .form-grid select:focus { outline: none; border-color: var(--ink); }
 .form-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* Health */
 .health-row { display: flex; justify-content: space-between; align-items: center; gap: 10px;
   background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 13px 15px; margin-bottom: 8px; }
 .status-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 7px; box-sizing: border-box; }
-.status-dot.ok { background: var(--ink); }
-.status-dot.warn { background: var(--muted); }
-.status-dot.bad { background: transparent; border: 2px solid var(--ink); }
+/* Health dots always sit beside their word ("healthy" / "N failing" / …), so the
+   colour reinforces the label rather than replacing it. */
+.status-dot.ok { background: var(--good); }
+.status-dot.warn { background: var(--warn); }
+.status-dot.bad { background: var(--crit); }
 .status-dot.idle { background: var(--line-2); }
 
 /* Settings / import */
@@ -206,21 +227,36 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 16px 14px 48px; }
 .btn-sm { padding: 7px 13px; font-size: 13px; }
 .warn { color: var(--text); font-size: 12px; margin-top: 8px; font-weight: 600; }
 .note { color: var(--muted); font-size: 13px; }
+/* Paste-time caveats ("this dealer blocks automated refresh") — amber, and the
+   text itself already leads with ⚠, so it never relies on colour. */
+.note.warn { color: var(--warn-ink); font-weight: 600; }
 .section-title { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); font-weight: 700; margin: 20px 0 9px; }
 
 /* Checklist */
-.owned-tag { font-size: 10px; font-weight: 700; color: #fff; background: var(--ink); border-radius: 999px; padding: 1px 7px; vertical-align: middle; }
+.owned-tag { font-size: 10px; font-weight: 700; color: #fff; background: var(--good-ink); border-radius: 999px; padding: 1px 7px; vertical-align: middle; }
 .keybar { background: var(--card-2); border: 1px solid var(--line); color: var(--text); border-radius: 11px; padding: 11px 13px; font-size: 13px; margin-bottom: 12px; }
 .prog { display: flex; align-items: center; gap: 11px; margin: 4px 0 16px; }
 .prog-bar { flex: 1; height: 8px; background: var(--card-2); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
-.prog-bar span { display: block; height: 100%; background: var(--ink); border-radius: 999px; transition: width .3s; }
+.prog-bar span { display: block; height: 100%; background: var(--good); border-radius: 999px; transition: width .3s; }
 .prog-label { font-size: 12px; color: var(--muted); white-space: nowrap; font-weight: 600; }
 
-/* Tier / phase windows (buy order) — hierarchy shown by border weight, not colour */
+/* Tier / phase windows (buy order) — priority is carried by an ordinal blue ramp:
+   darker = buy sooner. The tier's own title still states the order in words. */
 .tier-window { background: var(--bg-2); border: 1px solid var(--line); border-radius: 14px; padding: 6px 15px 14px; margin-bottom: 16px; }
-.tier-window[data-tier="Tier 1"] { border-left: 3px solid var(--ink); }
-.tier-window[data-tier="Tier 2"] { border-left: 3px solid var(--muted); }
-.tier-window[data-tier="Tier 3"] { border-left: 3px solid var(--line-2); }
+.tier-window[data-tier="Tier 1"] { border-left: 4px solid var(--tier-1); }
+.tier-window[data-tier="Tier 2"] { border-left: 4px solid var(--tier-2); }
+.tier-window[data-tier="Tier 3"] { border-left: 4px solid var(--tier-3); }
+/* Tier chip on the heading — colour + number together. */
+.tier-title::before {
+  content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+  margin-right: 8px; vertical-align: middle; background: var(--line-2);
+}
+.tier-window[data-tier="Tier 1"] .tier-title::before { background: var(--tier-1); }
+.tier-window[data-tier="Tier 2"] .tier-title::before { background: var(--tier-2); }
+.tier-window[data-tier="Tier 3"] .tier-title::before { background: var(--tier-3); }
+.tier-window[data-tier="Tier 1"] .tier-count { color: var(--tier-1); }
+.tier-window[data-tier="Tier 2"] .tier-count { color: var(--tier-2); }
+.tier-window[data-tier="Tier 3"] .tier-count { color: var(--tier-3); }
 .tier-head { display: flex; justify-content: space-between; align-items: center; gap: 10px;
   position: sticky; top: 114px; z-index: 5; background: var(--bg-2);
   padding: 13px 0 10px; margin-bottom: 2px; }
@@ -238,7 +274,7 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 16px 14px 48px; }
 .check-box { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 8px; border: 2px solid var(--line-2);
   background: var(--card); color: #fff; font-weight: 800; font-size: 15px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .12s; }
 .check-box:hover { border-color: var(--ink); }
-.check-box.on { background: var(--ink); border-color: var(--ink); }
+.check-box.on { background: var(--good); border-color: var(--good); } /* have it */
 .cr-main { flex: 1; min-width: 0; }
 .cr-name { font-size: 14px; font-weight: 550; }
 .cr-qty { color: var(--muted); font-weight: 700; font-size: 12px; }
