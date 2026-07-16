@@ -164,10 +164,26 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 16px 14px 48px; }
 .detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding-right: 46px; }
 .detail-head h2 { margin: 4px 0 2px; }
 
-.hist-wrap { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; overflow-x: auto; }
+.hist-wrap { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; overflow-x: auto; }
+.hist-wrap svg { touch-action: pan-y; }
 .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; }
 .legend .k { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 .legend .sw { width: 12px; height: 3px; border-radius: 2px; }
+
+/* Hover readout — names every dealer at the hovered date, so two dealers on the
+   same price read as two rows instead of one indistinguishable line. */
+.chart-tip {
+  position: absolute; top: 8px; z-index: 2; pointer-events: none;
+  background: var(--card); border: 1px solid var(--line-2); border-radius: 10px;
+  padding: 7px 9px; box-shadow: var(--shadow); min-width: 150px;
+}
+.chart-tip.hidden { display: none; }
+.tip-date { font-size: 11px; color: var(--muted); font-weight: 700; margin-bottom: 4px; }
+.tip-row { display: flex; align-items: center; gap: 7px; font-size: 12px; white-space: nowrap; }
+.tip-row + .tip-row { margin-top: 2px; }
+.tip-row .tip-name { flex: 1; }
+.tip-row b { font-variant-numeric: tabular-nums; }
+.tip-sw { width: 9px; height: 9px; border-radius: 2px; flex: 0 0 auto; }
 
 .dealer-list { margin-top: 14px; }
 .dealer-row {

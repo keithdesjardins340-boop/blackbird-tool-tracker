@@ -690,6 +690,10 @@
         ${suggestionsHTML}
         ${addForm}`;
 
+      // Hover layer: the only honest way to separate two dealers sitting on the
+      // same price — their lines are identical, so the chart has to answer on ask.
+      Charts.attachHover(detailBody.querySelector('.hist-wrap svg'), series);
+
       const ob = document.getElementById('detailOwn');
       if (ob) ob.onclick = async () => { await toggleOwned(ob.dataset.own); openDetail(toolId); };
       const eb = document.getElementById('detailEdit');

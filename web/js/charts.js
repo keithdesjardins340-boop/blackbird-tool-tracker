@@ -91,9 +91,79 @@
       return `<path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"${dash ? ` stroke-dasharray="${dash}"` : ''}/>${dots}`;
     }).join('');
 
-    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img">${grid}${paths}</svg>`;
+    // Scales ride along on the element so the hover layer can invert them without
+    // the caller having to know anything about the geometry.
+    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img"
+      data-min-t="${minT}" data-max-t="${maxT}" data-min-p="${minP}" data-max-p="${maxP}"
+      data-pad="${pad.l},${pad.r},${pad.t},${pad.b}" data-w="${w}" data-h="${h}"
+      >${grid}${paths}<g class="cross"></g></svg>`;
+  }
+
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  // Two dealers charging the same price draw the SAME line — one simply hides the
+  // other, and no amount of colour fixes that. Offsetting a line to "separate" them
+  // would misreport the price, so instead the chart answers on hover: a crosshair
+  // plus a tooltip naming every dealer at that date. That also makes the chart
+  // interactive, which a line chart should be anyway.
+  function attachHover(svg, series) {
+    if (!svg || !svg.dataset || !svg.dataset.w) return;
+    const minT = +svg.dataset.minT, maxT = +svg.dataset.maxT;
+    const minP = +svg.dataset.minP, maxP = +svg.dataset.maxP;
+    const [pl, pr, pt, pb] = svg.dataset.pad.split(',').map(Number);
+    const w = +svg.dataset.w, h = +svg.dataset.h;
+    const X = (t) => pl + ((+new Date(t) - minT) / (maxT - minT || 1)) * (w - pl - pr);
+    const Y = (p) => pt + (1 - (p - minP) / (maxP - minP || 1)) * (h - pt - pb);
+    const g = svg.querySelector('.cross');
+    const wrap = svg.parentElement;
+    if (!g || !wrap) return;
+    let tip = wrap.querySelector('.chart-tip');
+    if (!tip) { tip = document.createElement('div'); tip.className = 'chart-tip hidden'; wrap.appendChild(tip); }
+
+    const prepared = series
+      .map((s) => ({
+        label: s.label, color: s.color || '#09090b',
+        pts: (s.points || []).filter((p) => p.price != null).sort((a, b) => +new Date(a.t) - +new Date(b.t)),
+      }))
+      .filter((s) => s.pts.length);
+    if (!prepared.length) return;
+
+    function move(e) {
+      const r = svg.getBoundingClientRect();
+      const px = ((e.touches ? e.touches[0].clientX : e.clientX) - r.left) * (w / (r.width || w));
+      const x = Math.min(w - pr, Math.max(pl, px));
+      const t = minT + ((x - pl) / (w - pl - pr || 1)) * (maxT - minT);
+      // Nearest real reading per dealer — every dealer is listed, so identical
+      // prices show up as two named rows instead of one ambiguous line.
+      const hits = prepared.map((s) => {
+        let best = s.pts[0];
+        for (const p of s.pts) {
+          if (Math.abs(+new Date(p.t) - t) < Math.abs(+new Date(best.t) - t)) best = p;
+        }
+        return { label: s.label, color: s.color, p: best };
+      }).sort((a, b) => a.p.price - b.p.price);
+
+      g.innerHTML = `<line x1="${x.toFixed(1)}" y1="${pt}" x2="${x.toFixed(1)}" y2="${h - pb}"
+          stroke="var(--line-2)" stroke-width="1"/>`
+        + hits.map((hh) => `<circle cx="${X(hh.p.t).toFixed(1)}" cy="${Y(hh.p.price).toFixed(1)}" r="4"
+            fill="${hh.color}" stroke="#fff" stroke-width="1.5"/>`).join('');
+
+      tip.innerHTML = `<div class="tip-date">${new Date(hits[0].p.t).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}</div>`
+        + hits.map((hh) => `<div class="tip-row"><span class="tip-sw" style="background:${hh.color}"></span>`
+          + `<span class="tip-name">${esc(hh.label)}</span><b>$${Number(hh.p.price).toFixed(2)}</b></div>`).join('');
+      tip.classList.remove('hidden');
+      const left = Math.min(Math.max(0, (x / w) * (r.width || w) - tip.offsetWidth / 2), (r.width || w) - tip.offsetWidth);
+      tip.style.left = `${Math.max(0, left)}px`;
+    }
+    function leave() { g.innerHTML = ''; tip.classList.add('hidden'); }
+
+    svg.addEventListener('mousemove', move);
+    svg.addEventListener('touchstart', move, { passive: true });
+    svg.addEventListener('touchmove', move, { passive: true });
+    svg.addEventListener('mouseleave', leave);
+    svg.addEventListener('touchend', leave);
   }
 
   const colorFor = (i) => colorAt(i); // legacy: index-based, kept for old callers
-  window.Charts = { sparkline, lineChart, colorFor, assignSlots, colorAt, dashAt };
+  window.Charts = { sparkline, lineChart, colorFor, assignSlots, colorAt, dashAt, attachHover };
 })();
