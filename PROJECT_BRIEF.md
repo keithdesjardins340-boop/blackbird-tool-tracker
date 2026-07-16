@@ -40,8 +40,9 @@ permission.
   PowerShell or the existing static server (`web/serve.ps1`).
 - **No secrets in the repo, ever** (incl. migrations/workflows). The GitHub PAT and
   writer token live only in Supabase secrets / the owner's browser.
-- **Migrations are append-only + numbered** (currently through **0014**; next is
-  **0015**).
+- **Migrations are append-only + numbered.** The next number is the highest in
+  `supabase/migrations/` plus one — read the folder rather than trusting a number in
+  a doc. Never edit an applied one; reverse it with a new migration.
 - **Scrape politely** — 2 runs/day, per-dealer pacing, honest UA. No anti-bot
   evasion; the escalation path for blocked dealers is a paid proxy or the human
   bookmarklet, never stealth.
@@ -70,8 +71,9 @@ permission.
 
 ### Repo layout
 ```
-/supabase/migrations   0001–0014 (schema, views, RLS, columns; 0012/0013 added the
-                       dealer-coverage schema, 0014 reverted it)
+/supabase/migrations   numbered, append-only (schema, views, RLS, columns). Note
+                       0012/0013 added the dealer-coverage schema and 0014 reverts
+                       it — that pair nets to nothing; they're kept as history.
 /supabase/functions/writer   Edge Function write-proxy (see Security)
 /scraper/src
   run.js         THE product: scrape active listings → price_snapshot (anomaly gate, link-rot)

@@ -55,7 +55,7 @@ Not a decision: the deal-alert threshold — just use the default (≥10% under 
 - No local Node/npm assumptions; everything runs in GitHub Actions; local = plain PowerShell / existing static server.
 - Web app stays vanilla — no framework/bundler/build step for /web (plain ES modules/HTML/CSS).
 - No secrets in the repo ever (incl. migrations/fixtures/workflows); new secrets → Actions/function secrets + a README line (name + purpose).
-- Migrations append-only + numbered (next is 0015); never edit an applied one.
+- Migrations append-only + numbered (next = highest in `supabase/migrations/` + 1); never edit an applied one.
 - Scrape politely: 2 runs/day, per-dealer rate limits, honest UA; no anti-bot evasion — escalate to paid-API path.
 - Never break the manual paste path (generic adapter must always price a pasted URL).
 - Light theme; chrome stays monochrome, but colour IS used where it carries meaning (tier priority ramp, status, price direction, chart series). See PROJECT_BRIEF.md → constraints.
