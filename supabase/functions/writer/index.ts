@@ -252,22 +252,35 @@ async function handle(admin: any, op: string, p: Record<string, any>) {
       }
       const urls = parseLinks(p.links);
       const cache = new Map<string, number>();
-      const rows: Record<string, unknown>[] = [];
+      let links_added = 0;    // brand new
+      let links_revived = 0;  // previously removed, tracked again
+      let already = 0;        // already tracked on this tool — no-op
+      const conflicts: string[] = []; // the URL belongs to a DIFFERENT tool
+
       for (const url of urls) {
         const dealerId = await resolveDealer(admin, url, cache);
-        if (dealerId) rows.push({ tool_id: toolId, dealer_id: dealerId, product_url: url, active: true, source: "manual" });
-      }
-      let links_added = 0;
-      if (rows.length) {
-        // DO NOTHING on the (dealer_id, product_url) unique index; .select()
-        // returns only the rows actually inserted, so the count is accurate.
-        const { data: ins, error } = await admin.from("tool_listings")
-          .upsert(rows, { onConflict: "dealer_id,product_url", ignoreDuplicates: true })
-          .select("id");
+        if (!dealerId) continue;
+        // Look the URL up rather than blind-upserting. A removed link still exists
+        // with active=false, so an "insert … do nothing" silently reported 0 added
+        // and the link could never be re-added. Reviving keeps its price history.
+        const { data: existing } = await admin.from("tool_listings")
+          .select("id,tool_id,active").eq("dealer_id", dealerId).eq("product_url", url).maybeSingle();
+        if (existing) {
+          // Never yank a link off another tool — the unique key is (dealer,url),
+          // so it can only live in one place. Report it instead.
+          if (String(existing.tool_id) !== String(toolId)) { conflicts.push(url); continue; }
+          if (existing.active) { already++; continue; }
+          const { error } = await admin.from("tool_listings").update({ active: true }).eq("id", existing.id);
+          if (error) throw error;
+          links_revived++;
+          continue;
+        }
+        const { error } = await admin.from("tool_listings")
+          .insert({ tool_id: toolId, dealer_id: dealerId, product_url: url, active: true, source: "manual" });
         if (error) throw error;
-        links_added = (ins || []).length;
+        links_added++;
       }
-      return { tool_id: toolId, links_added };
+      return { tool_id: toolId, links_added, links_revived, already, conflicts };
     }
     case "trigger_scrape": {
       // Kick the scrape workflow via GitHub's workflow_dispatch (§3.4). The PAT

@@ -726,7 +726,8 @@
         await loadAll();
         const created = state.tools.find((x) => String(x.tool_id) === String(res.tool_id));
         if (created) openDetail(res.tool_id); else closeDetail();
-        if (res.links_added > 0 && confirm(`Added with ${res.links_added} link${res.links_added > 1 ? 's' : ''}. Run a price scrape now? (prices also update on the next scheduled run.)`)) {
+        const tracked = (res.links_added || 0) + (res.links_revived || 0);
+        if (tracked > 0 && confirm(`Added with ${tracked} link${tracked > 1 ? 's' : ''}. Run a price scrape now? (prices also update on the next scheduled run.)`)) {
           triggerScrape(null);
         }
       }
@@ -756,10 +757,13 @@
     msg.textContent = 'Adding…';
     try {
       const res = await SB.writeApi('add_tool_with_links', { tool_id: toolId, links });
-      if (res.links_added > 0) {
+      const tracked = (res.links_added || 0) + (res.links_revived || 0);
+      if (tracked > 0) {
         openDetail(toolId); // refresh the dealer list; price lands on next scrape
+      } else if (res.conflicts && res.conflicts.length) {
+        msg.textContent = 'That link is already tracked under a different tool.';
       } else {
-        msg.textContent = 'No new links added — those URLs are already saved for their dealer.';
+        msg.textContent = 'Already tracked on this tool — nothing to add.';
       }
     } catch (e) {
       msg.textContent = 'Add failed: ' + e.message;
