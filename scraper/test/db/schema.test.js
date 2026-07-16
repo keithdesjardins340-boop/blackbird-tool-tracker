@@ -83,7 +83,8 @@ test('every migration applied, and the objects the app reads exist', async () =>
     `select table_name from information_schema.views where table_schema = 'public'`,
   )).map((r) => r.table_name).sort();
   assert.deepEqual(views, [
-    'dealer_health', 'listing_latest_price', 'listing_price_stats', 'listing_spark', 'tool_market_status',
+    'dealer_health', 'discovery_inbox', 'listing_latest_price', 'listing_price_stats',
+    'listing_spark', 'tool_market_status',
   ]);
 
   const tables = (await q(
@@ -118,7 +119,8 @@ test('the read-only RLS posture survives every migration', async () => {
     `select relname, relrowsecurity from pg_class
       where relnamespace = 'public'::regnamespace and relkind = 'r'`,
   );
-  for (const t of ['tools', 'dealers', 'tool_listings', 'price_snapshots', 'scrape_runs', 'app_secrets', 'map_candidates']) {
+  for (const t of ['tools', 'dealers', 'tool_listings', 'price_snapshots', 'scrape_runs',
+    'app_secrets', 'map_candidates', 'fx_rates', 'alerts_sent', 'discovery_suggestions']) {
     const row = rows.find((r) => r.relname === t);
     assert.ok(row?.relrowsecurity, `RLS should be enabled on ${t}`);
   }
