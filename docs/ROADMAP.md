@@ -157,6 +157,23 @@ its place: it's the answer to "why does fluke.com say a different number than th
 `$893.63 · Jul 16 · converted from 635.99 USD @ 1.4051` on each dealer row.
 Verified in the browser against a seeded USD listing. Nothing to build.
 
+### 2.9 Known edge: a deleted dealer can poison the offline queue
+Found in review, deliberately not fixed yet — the fix is one line, but shipping it
+means another hand-copy of the whole writer (see 2.8), and the odds are low.
+
+**The case:** he records a purchase offline (`purchase_listing_id = N`), then deletes
+that dealer before reconnecting. `delete_dealer` cascades the listing away, so the
+queued replay sets `purchase_listing_id` to a row that no longer exists → FK violation
+→ the write fails. `flush()` keeps failed items on purpose (losing his checkmark to
+tidy the queue would be worse), so that one entry blocks the queue behind it, and the
+badge turns red with a Postgres error he can't act on.
+
+**The fix, next time the writer is deployed:** in `toggle_owned`, check the listing
+exists before setting `purchase_listing_id`, and null it if it doesn't. Losing *where*
+he bought it beats blocking every later checkmark — and the price, which is the part
+that matters, survives either way. (`tools.purchase_listing_id` is already
+`ON DELETE SET NULL` for the same reason.)
+
 ### 2.8 Deploy the writer from CI, not by hand
 **Problem.** `supabase/functions/writer/` is deployed by copying its source into a
 deploy call. It's ~600 lines, and it is the ONLY write path the browser has: a

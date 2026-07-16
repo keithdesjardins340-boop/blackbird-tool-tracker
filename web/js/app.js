@@ -487,6 +487,11 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS, SEARCH_FROM_TOOLS } f
       // Offline, this returns {queued:true} and the ✓ stands: it's saved locally
       // and will sync. The optimistic flip IS the queued state, so the screen
       // matches what's going to happen rather than lying and snapping back.
+      //
+      // The payload is listed field by field on purpose: `fields` also carries
+      // display-only values (purchase_dealer, which is a view join) and this is
+      // what gets replayed from the queue hours later — it should contain the
+      // server's truth and nothing else.
       await SB.writeApi('toggle_owned', {
         id: t.tool_id,
         owned: !!fields.owned,
@@ -592,12 +597,18 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS, SEARCH_FROM_TOOLS } f
       el.addEventListener('click', (e) => { if (e.target === el) close(null); });
       el.querySelector('#buySkip').onclick = () => close({}); // ticked, nothing recorded
       el.querySelector('#buySave').onclick = () => {
+        const sel = el.querySelector('#buyDealer');
         const price = Number(el.querySelector('#buyPrice').value);
-        const listingId = el.querySelector('#buyDealer').value || null;
+        const listingId = sel.value || null;
         close({
           purchase_price_cad: Number.isFinite(price) && price > 0 ? price : null,
           purchase_listing_id: listingId ? Number(listingId) : null,
+          // Timestamped HERE, not on the server: a tick queued in a basement
+          // happened when he tapped it, not when the queue drained.
           purchased_at: new Date().toISOString(),
+          // Local-only: the row can name the dealer immediately instead of
+          // waiting for the view's join to come back. Never sent to the writer.
+          purchase_dealer: sel.selectedOptions?.[0]?.text || null,
         });
       };
       setTimeout(() => el.querySelector('#buyPrice')?.focus(), 0);
@@ -672,7 +683,24 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS, SEARCH_FROM_TOOLS } f
     for (const r of rows) {
       if (r.op !== 'toggle_owned') continue;
       const t = state.tools.find((x) => String(x.tool_id) === String(r.payload?.id));
-      if (t) t.owned = !!r.payload.owned;
+      if (!t) continue;
+      // Overlay the WHOLE queued state, not just the tick. Restoring `owned`
+      // alone left an owned tool with no purchase_price_cad — which money_stats
+      // counts as neither spent NOR remaining, so a purchase he recorded in a
+      // basement silently vanished from the money line until the queue flushed.
+      const p = r.payload || {};
+      t.owned = !!p.owned;
+      t.purchase_price_cad = p.purchase_price_cad ?? null;
+      t.purchase_listing_id = p.purchase_listing_id ?? null;
+      t.purchased_at = p.purchased_at ?? null;
+      // The dealer NAME comes from a view join, so it isn't in the payload.
+      // Recover it from the listing he picked when we can; otherwise the row
+      // just reads "paid" until the queue syncs — missing a label is fine,
+      // missing the number is not.
+      t.purchase_dealer = p.purchase_listing_id != null
+        && String(p.purchase_listing_id) === String(t.best_listing_id)
+        ? (t.best_dealer ?? null)
+        : null;
     }
     state.pending = rows.length;
     updatePendingBadge();
