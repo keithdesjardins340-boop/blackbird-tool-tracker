@@ -180,11 +180,13 @@ every migration to a throwaway `postgres:16` and assert what the views promise.
 Every trap in §6 has a test that fails if it comes back. Add to them rather than
 around them.
 
-**The roadmap is done except what needs him** (`docs/ROADMAP.md` §5): two repo
-secrets he has to mint — `NTFY_TOPIC` (deal alerts are shipped but inert without
-it) and `SUPABASE_ACCESS_TOKEN` (so the writer stops being hand-copied at deploy)
-— plus the parked paid-coverage items. Snapshot retention isn't due until
-`price_snapshots` passes ~250k rows.
+**The roadmap is done, and nothing is waiting on him.** The remaining items in
+`docs/ROADMAP.md` §4–§5 are parked by his choice (auto-map/discovery, paid
+coverage) or not due yet (snapshot retention, ~250k rows away — it's at 22).
+
+**He checks the app weekly and declined push alerts** (2026-07-16). The code is
+in-tree and inert; don't re-pitch it. Freshness is answered on screen instead:
+the age chip on any price over a week old, the scrape clock, the Health dot.
 
 **Landed recently:** the test harness (§7); shared thresholds in
 `web/js/constants.js`; deploy-time `CACHE` stamping; the weekly backup workflow;

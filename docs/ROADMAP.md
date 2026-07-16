@@ -199,18 +199,26 @@ Auto-map / discovery (`ENABLE_AUTO_MAP` stays unset), dealer catalogs, Flipp,
 description matching, Keepa, Zyte/home-proxy for HD/CT/Amazon. The bookmarklet is the
 sanctioned path for blocked dealers.
 
+**Push alerts (2.1) — he said no.** 2026-07-16: *"I dont want notifications I will check
+the app weekly."* The code stays in-tree and inert (`NTFY_TOPIC` unset ⇒ `alerts.js`
+exits immediately, the scrape step is a no-op), exactly like auto-map — but the Settings
+prompt is gone, because a nag to set up a feature he's declined is chrome that doesn't
+earn its place. **Don't re-pitch it.** Weekly checking is already served in-app: the age
+chip on any price over `PRICE_AGE_CHIP_DAYS` old, the scrape clock, and the Health dot.
+If it ever comes back, the one thing worth arguing for is the *run-failure* alert — a
+silently dead scraper is the one failure a weekly glance can misread as fresh prices —
+and even that is covered by the Health dot today.
+
 ## 5. Waiting on him — nothing else is
 
-These are the only items an assistant can't finish. The first is a credential (his to
-mint; never read or paste one); the rest cost money or hardware.
+**Nothing is waiting on him any more.** The two items that were, are closed:
+`SUPABASE_ACCESS_TOKEN` (2.8) — added 2026-07-16, the writer now deploys from CI.
+`NTFY_TOPIC` (2.1) — **declined**; see §4.
 
-1. **`NTFY_TOPIC` repo secret** (2.1) — deal alerts are built, tested and shipped
-   dark. They do nothing until the secret exists and he subscribes. README §"Deal
-   alerts on your phone" has the steps.
-2. **Home residential proxy** for HD auto-refresh (needs an always-on device of his).
-3. **Zyte / Keepa** paid coverage. Everything else in this doc: act, verify, report.
+What's left costs money or hardware, and is his call to make, not something to chase:
 
-`SUPABASE_ACCESS_TOKEN` (2.8) is **done** — he added it 2026-07-16.
+1. **Home residential proxy** for HD auto-refresh (needs an always-on device of his).
+2. **Zyte / Keepa** paid coverage. Everything else in this doc: act, verify, report.
 
 > **When asking him for any secret, put "don't paste it to me — mint it, put it
 > straight in the form, then say it's in" on EVERY item in the message.** He pastes

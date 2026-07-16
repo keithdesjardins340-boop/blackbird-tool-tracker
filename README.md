@@ -117,7 +117,13 @@ Then rebuild the list from the app's quick-add (tool + pasted links). Note: the
 Deals tab's "all-time low" reads are noisy for the first couple of weeks after a
 wipe while price history rebuilds, then settle.
 
-## Deal alerts on your phone (optional, free)
+## Deal alerts on your phone (optional, free — currently OFF)
+
+> **Not in use.** Keith checks the app weekly and doesn't want notifications, so
+> `NTFY_TOPIC` is deliberately unset and the alert step does nothing. The code is
+> kept in-tree and inert in case that changes. Freshness is answered in-app instead:
+> the age chip on any price over a week old, the scrape clock, and the Health dot.
+> Everything below is what it would take to turn it on.
 
 The tracker's job is *buy at the right time*, and that signal is no use sitting in
 a tab. After each scrape it can push a notification when a tool you still need

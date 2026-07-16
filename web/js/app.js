@@ -850,13 +850,6 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS, SEARCH_FROM_TOOLS } f
       <p class="note">Prices refresh twice a day on their own. This runs one now — max once every 10 minutes.</p>
       <button class="btn" id="runScrape" ${hasKey ? '' : 'disabled'}>Run price scrape now</button>
       <div id="runScrapeMsg" class="note"></div>
-
-      <div class="section-title">5 · Deal alerts on your phone</div>
-      <p class="note">Off unless you've set it up. Free, no account: add an
-        <b>NTFY_TOPIC</b> repo secret on GitHub and subscribe to the same topic in the
-        <a href="https://ntfy.sh/" target="_blank" rel="noopener">ntfy</a> app — then a
-        tool hitting your target price pings you instead of waiting for you to look.
-        Setup steps are in the README.</p>
     </div>`;
 
     document.getElementById('expCsv').onclick = () => exportData('csv');
