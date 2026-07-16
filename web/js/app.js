@@ -720,7 +720,7 @@
     detailBody.innerHTML = '<h2>Import captured price</h2><div class="note">Checking…</div>';
     let match = null;
     try {
-      const rows = await SB.select('tool_listings', `select=id,tool:tools(name),dealer:dealers(name)&active=eq.true&product_url=eq.${encodeURIComponent(nurl)}`);
+      const rows = await SB.select('tool_listings', `select=id,tool:tools(name),dealer:dealers(name)&product_url=eq.${encodeURIComponent(nurl)}`);
       match = (rows || [])[0] || null;
     } catch { /* treat as no match */ }
 
@@ -968,5 +968,5 @@
   window.addEventListener('online', () => { if (state.offline) loadAll(); });
   // Bookmarklet capture: handle a #import= payload on boot and on later changes.
   window.addEventListener('hashchange', handleImportHash);
-  loadAll().then(handleImportHash);
+  loadAll().catch(() => {}).then(handleImportHash); // don't drop a capture if refresh hiccups
 })();

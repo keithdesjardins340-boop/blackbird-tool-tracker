@@ -259,6 +259,7 @@ async function handle(admin: any, op: string, p: Record<string, any>) {
       req(Number.isFinite(price) && price > 0, "a valid positive price is required");
       const { data: listing } = await admin.from("tool_listings").select("id").eq("id", asInt(p.listing_id)).maybeSingle();
       req(listing, "listing not found");
+      await admin.from("tool_listings").update({ active: true }).eq("id", listing.id); // a manual capture proves the link is live
       const anomaly = await isAnomaly(admin, listing.id, price);
       const rp = Number(p.regular_price);
       const snap: Record<string, unknown> = { listing_id: listing.id, price_cad: price, is_anomaly: anomaly, parse_via: "manual-capture" };
@@ -275,29 +276,40 @@ async function handle(admin: any, op: string, p: Record<string, any>) {
       req(typeof p.product_url === "string" && /^https?:\/\//i.test(p.product_url), "valid product_url required");
       const price = Number(p.price);
       req(Number.isFinite(price) && price > 0, "a valid positive price is required");
-      let toolId = asInt(p.tool_id);
-      if (!toolId) {
-        const fields = pick(p.fields || {}, TOOL_COLS);
-        req(fields.name, "tool_id or fields.name required");
-        const { data, error } = await admin.from("tools").insert(fields).select("id").single();
-        if (error) throw error;
-        toolId = data.id;
-      }
       const url = normalizeUrl(p.product_url);
       const dealerId = await resolveDealer(admin, url, new Map<string, number>());
       req(dealerId, "could not resolve a dealer for that URL");
-      const { data: listing, error: lErr } = await admin.from("tool_listings")
-        .upsert({ tool_id: toolId, dealer_id: dealerId, product_url: url, active: true, source: "manual" }, { onConflict: "dealer_id,product_url" })
-        .select("id").single();
-      if (lErr) throw lErr;
-      const anomaly = await isAnomaly(admin, listing.id, price);
+      // If this URL is already a listing, record onto IT (revive if dead) — never
+      // reassign it to another tool or create a duplicate tool. Otherwise create.
+      let listingId: number, toolId: number;
+      const { data: existing } = await admin.from("tool_listings")
+        .select("id,tool_id").eq("dealer_id", dealerId).eq("product_url", url).maybeSingle();
+      if (existing) {
+        listingId = existing.id; toolId = existing.tool_id;
+        await admin.from("tool_listings").update({ active: true }).eq("id", listingId);
+      } else {
+        toolId = asInt(p.tool_id);
+        if (!toolId) {
+          const fields = pick(p.fields || {}, TOOL_COLS);
+          req(fields.name, "tool_id or fields.name required");
+          const { data, error } = await admin.from("tools").insert(fields).select("id").single();
+          if (error) throw error;
+          toolId = data.id;
+        }
+        const { data: created, error: lErr } = await admin.from("tool_listings")
+          .insert({ tool_id: toolId, dealer_id: dealerId, product_url: url, active: true, source: "manual" })
+          .select("id").single();
+        if (lErr) throw lErr;
+        listingId = created.id;
+      }
+      const anomaly = await isAnomaly(admin, listingId, price);
       const rp = Number(p.regular_price);
-      const snap: Record<string, unknown> = { listing_id: listing.id, price_cad: price, is_anomaly: anomaly, parse_via: "manual-capture" };
+      const snap: Record<string, unknown> = { listing_id: listingId, price_cad: price, is_anomaly: anomaly, parse_via: "manual-capture" };
       if (p.in_stock != null) snap.in_stock = !!p.in_stock;
       if (Number.isFinite(rp) && rp > price) { snap.regular_price_cad = rp; snap.on_sale = true; }
       const { error: sErr } = await admin.from("price_snapshots").insert(snap);
       if (sErr) throw sErr;
-      return { tool_id: toolId, listing_id: listing.id, price, is_anomaly: anomaly };
+      return { tool_id: toolId, listing_id: listingId, price, is_anomaly: anomaly };
     }
     case "import_tools": {
       const rows: Record<string, unknown>[] = Array.isArray(p.rows) ? p.rows : [];
