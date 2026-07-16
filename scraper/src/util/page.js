@@ -27,7 +27,12 @@ export async function fetchAll(makeQuery, { page = PAGE } = {}) {
   const out = [];
   for (let from = 0; ; from += page) {
     const { data, error } = await makeQuery().range(from, from + page - 1);
-    if (error) throw error;
+    // Supabase hands back a plain {message, details, hint} object, not an Error.
+    // Rethrowing it as-is loses the stack and turns `e.message` into a coin flip
+    // for callers — wrap it, keep the original as `cause`.
+    if (error) {
+      throw Object.assign(new Error(error.message || 'query failed'), { cause: error });
+    }
     out.push(...(data || []));
     if (!data || data.length < page) return out; // short page = last page
   }

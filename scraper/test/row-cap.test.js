@@ -50,10 +50,11 @@ test('the run report counts fresh links per LISTING, not per snapshot', () => {
   );
 });
 
-test('the backup still pages instead of trusting one response', () => {
-  // The same cap, on the one job where truncation is unrecoverable: you find out
-  // while restoring.
-  const backup = src('../../scraper/src/backup.js');
-  assert.match(backup, /\.range\(from, from \+ PAGE - 1\)/);
-  assert.match(backup, /data\.length < PAGE/, 'a short page is what ends the loop');
+test('the backup and the report both page, via the shared helper', () => {
+  // The same cap, on the one job where truncation is unrecoverable (you find out
+  // while restoring) and the one where it would cry wolf (dead-link reporting).
+  // The paging mechanics themselves are covered in page.test.js.
+  for (const f of ['../../scraper/src/backup.js', '../../scraper/src/report.js']) {
+    assert.match(src(f), /fetchAll\(/, `${f} must page rather than trust one response`);
+  }
 });

@@ -77,10 +77,14 @@ const defOf = async (view) =>
 // ---- the migrations themselves --------------------------------------------
 
 test('every migration applied, and the objects the app reads exist', async () => {
+  // Exhaustive on purpose: adding a view should be a decision, not a surprise.
+  // (It caught listing_spark going in, which is the point.)
   const views = (await q(
     `select table_name from information_schema.views where table_schema = 'public'`,
   )).map((r) => r.table_name).sort();
-  assert.deepEqual(views, ['dealer_health', 'listing_latest_price', 'listing_price_stats', 'tool_market_status']);
+  assert.deepEqual(views, [
+    'dealer_health', 'listing_latest_price', 'listing_price_stats', 'listing_spark', 'tool_market_status',
+  ]);
 
   const tables = (await q(
     `select table_name from information_schema.tables
