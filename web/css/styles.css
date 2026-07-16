@@ -163,6 +163,10 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 16px 14px 48px; }
 .delta.flat { color: var(--muted); }
 
 .spark { display: block; }
+/* Reserves the sparkline's exact box before it's drawn (see wireSparklines).
+   Hard-coded to the sparkline's own 96×28 default — if that changes, change
+   this with it, or the list will shift as charts fill in. */
+.spark-slot { display: inline-block; width: 96px; height: 28px; vertical-align: middle; }
 
 /* Detail overlay */
 .detail { position: fixed; inset: 0; z-index: 50; background: rgba(9, 9, 11, .38); display: flex; backdrop-filter: blur(2px); }

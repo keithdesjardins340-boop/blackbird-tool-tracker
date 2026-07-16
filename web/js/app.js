@@ -223,9 +223,49 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
     bind('fq', 'q', 'input'); bind('ftier', 'tier'); bind('fcat', 'category'); bind('fowned', 'owned'); bind('fpriced', 'priced');
   }
 
+  // ---- lazy sparklines -------------------------------------------------
+  // A sparkline is ~90 days of points turned into an SVG path. Cheap once,
+  // wasteful ×200 for cards that are nowhere near the screen — and it all lands
+  // on the main thread of a phone before the first paint. Cards reserve the
+  // space and the chart is drawn as it scrolls up.
+  let sparkObserver = null;
+
+  function drawSpark(slot) {
+    if (slot.firstChild) return;
+    const id = slot.getAttribute('data-spark');
+    const only = slot.getAttribute('data-only');
+    const values = state.sparks[id] || (only != null ? [Number(only)] : []);
+    slot.innerHTML = Charts.sparkline(values);
+  }
+
+  /** Placeholder at the sparkline's exact size — reserving it is what stops the
+   *  list jumping under his thumb as charts appear. */
+  function sparkSlot(t) {
+    const only = t.best_price != null ? ` data-only="${esc(String(t.best_price))}"` : '';
+    return `<span class="spark-slot" data-spark="${esc(String(t.best_listing_id ?? ''))}"${only}></span>`;
+  }
+
+  function wireSparklines() {
+    // Always drop the previous observer first: render() replaces the whole view,
+    // so its targets are detached nodes and keeping them alive is a leak that
+    // grows with every tab switch.
+    if (sparkObserver) { sparkObserver.disconnect(); sparkObserver = null; }
+    const slots = view.querySelectorAll('.spark-slot');
+    if (!slots.length) return;
+    if (!('IntersectionObserver' in window)) { slots.forEach(drawSpark); return; } // no observer: just draw
+    sparkObserver = new IntersectionObserver((entries, obs) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        drawSpark(e.target);
+        obs.unobserve(e.target); // drawn once; stop watching
+      }
+    }, { rootMargin: '200px' }); // draw just before it arrives, so it's never seen filling in
+    slots.forEach((s) => sparkObserver.observe(s));
+  }
+
   // ---- card ------------------------------------------------------------
   function toolCard(t) {
-    const spark = Charts.sparkline(state.sparks[t.best_listing_id] || (t.best_price != null ? [t.best_price] : []));
+    const spark = sparkSlot(t);
     const badges = [];
     if (t.at_or_below_target) badges.push('<span class="badge target">≤ target</span>');
     if (t.at_all_time_low) badges.push('<span class="badge low">all-time low</span>');
@@ -1254,6 +1294,7 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
     const hd = document.getElementById('healthDot');
     if (hd) hd.classList.toggle('bad', n > 0);
     (RENDERERS[state.tab] || renderChecklist)();
+    wireSparklines(); // after the view exists; also drops the old tab's observer
   }
 
   document.getElementById('tabs').addEventListener('click', (e) => {
