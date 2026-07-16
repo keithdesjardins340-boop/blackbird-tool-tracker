@@ -6,7 +6,8 @@
 > and web-search mapping are not being pursued; auto-map lives behind the
 > `ENABLE_AUTO_MAP` repo variable. The bookmarklet capture path (in the README) is the
 > current answer for Canadian Tire / Amazon. Some P2/P3 items are done or still open.
-> See `PROJECT_BRIEF.md` for current state. Kept for reference, not as the roadmap.
+> See `PROJECT_BRIEF.md` for current state and [`ROADMAP.md`](ROADMAP.md) for the live
+> work queue. Kept for reference, not as the roadmap.
 
 Prioritized work plan (P0 → P3). One item = one PR/commit. Respect the guardrails at the bottom.
 

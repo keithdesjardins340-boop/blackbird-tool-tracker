@@ -6,7 +6,8 @@ people here, and how to verify anything given no local Node). It applies to ever
 model, not just Fable; the name is just where it started.
 
 Then [`PROJECT_BRIEF.md`](PROJECT_BRIEF.md) for the deeper reference — schema,
-views, the writer op whitelist, feature-by-feature status.
+views, the writer op whitelist, feature-by-feature status — and
+[`docs/ROADMAP.md`](docs/ROADMAP.md) for what's queued next and why.
 
 *(This file is a pointer on purpose. It used to repeat the brief, and two copies of
 the same thing is how one of them quietly goes stale — the exact bug class this

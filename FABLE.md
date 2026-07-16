@@ -3,7 +3,8 @@
 This is the working brief, and it's self-contained: paste the whole file into a
 session that has no repo access and it can work from this alone. Inside the repo,
 `CLAUDE.md` just points here. `PROJECT_BRIEF.md` is the deeper reference (schema,
-views, the writer op whitelist, feature status).
+views, the writer op whitelist, feature status); `docs/ROADMAP.md` is the work
+queue — what's next, in what order, and what's deliberately parked.
 
 ---
 
