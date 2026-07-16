@@ -192,22 +192,36 @@ tab's "all-time low" is noisy for a couple of weeks while history rebuilds.
 
 ## Status / open items
 
+**For "what's next", read `docs/ROADMAP.md` — not this section.** Two plans is how one
+of them goes stale, which is the bug this project keeps repeating. This is a reference
+for how things WORK; the roadmap owns what's left.
+
+As of 2026-07-16:
+
 - **Manual-first pivot: complete and deployed.** Quick-add, hostname dealers,
   bookmarklet capture, the scrape button, parked auto-map, and the "unpriced links"
-  report are all live.
-- **Owner actions:** re-paste a current writer token if the saved one is stale;
-  run the wipe when ready; optionally add `GH_PAT` (enables the scrape button) and/or
-  set `ENABLE_AUTO_MAP=true` (un-parks discovery).
-- **Leftover UX polish (unaffected):** overlay focus-trap/Esc, aria, persist tab,
-  copy-best-price-link, offline write-queue for checkmarks, lazy sparklines, a smarter
-  deal rule, a `node:test` harness.
+  report are all live. The wipe is done; `GH_PAT` is set (the scrape button works).
+- **The roadmap is finished and nothing is waiting on him.** The former "leftover UX
+  polish" all shipped: focus-trap/Esc, aria, persist tab, copy-best-price-link, the
+  offline write-queue, lazy sparklines, the smarter deal rule (migration 0016), and the
+  `node:test` harness (`test.yml`, two layers, counts reported to the run page).
+  Purchase capture, the manual-price staleness guard, the FX rate cache and the weekly
+  backup landed alongside them.
+- **Parked by his choice:** auto-map/discovery (`ENABLE_AUTO_MAP` unset) and push
+  alerts (built, inert, `NTFY_TOPIC` unset — he checks the app weekly and said no).
 - **Coverage is parked, owner-gated:** reliable HD/CT/Amazon would need a paid proxy
-  (Zyte) or Keepa (Amazon). Not pursued under manual-first unless the owner asks.
+  (Zyte) or Keepa (Amazon). Not pursued under manual-first unless he asks.
 
 ## Notes for whoever continues
 
 - The scraper can't run locally (no Node) — validate scraper changes with a CI run and
-  read the run report / `dealer_health`. No `gh` CLI locally.
+  read the run report / `dealer_health`. No `gh` CLI locally. `test.yml` runs on every
+  push/PR and is the fastest honest signal.
 - Scrapes can be kicked from the dashboard's **Run price scrape now** button (needs
-  `GH_PAT`) or the Actions UI (Run workflow).
+  `GH_PAT`, which is set) or the Actions UI (Run workflow).
 - Deal detection needs price history to be meaningful; it self-corrects over a few runs.
+- **The writer deploys from CI** (`deploy-writer.yml`) on any push touching
+  `supabase/functions/**`. Don't hand-copy it into a deploy call.
+- **The Data API silently caps every response at 1000 rows.** Any read that grows with
+  the list or with time must page (`scraper/src/util/page.js`), collapse server-side
+  (`listing_spark`, `listing_latest_price`), or fetch `desc` + `limit`. See FABLE.md §6.
