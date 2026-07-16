@@ -17,8 +17,8 @@
     <div class="topbar-actions">
       <!-- Checkmarks ticked with no signal: saved here, syncing when there is one. -->
       <span id="pendingBadge" class="pending-badge hidden" aria-live="polite"></span>
-      <button id="addToolBtn" class="icon-btn" title="Add a tool">＋</button>
-      <button id="refreshBtn" class="icon-btn" title="Refresh">&#x21bb;</button>
+      <button id="addToolBtn" class="icon-btn" aria-label="Add a tool" title="Add a tool">＋</button>
+      <button id="refreshBtn" class="icon-btn" aria-label="Refresh prices" title="Refresh">&#x21bb;</button>
     </div>
   </header>
 
@@ -33,10 +33,11 @@
   <div id="staleBar" class="stalebar hidden"></div>
   <main id="view"><div class="loading">Loading…</div></main>
 
-  <!-- Tool detail overlay -->
+  <!-- Tool detail overlay. Also hosts quick-add / edit, so the focus trap and
+       Esc handling in app.js cover both. -->
   <div id="detail" class="detail hidden" aria-hidden="true">
-    <div class="detail-panel">
-      <button id="detailClose" class="icon-btn detail-close">&times;</button>
+    <div class="detail-panel" role="dialog" aria-modal="true" aria-labelledby="detailBody" tabindex="-1">
+      <button id="detailClose" class="icon-btn detail-close" aria-label="Close">&times;</button>
       <div id="detailBody"></div>
     </div>
   </div>

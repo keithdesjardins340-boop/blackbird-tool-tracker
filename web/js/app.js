@@ -285,7 +285,7 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
     // The age rides with the price, not in the badge row: it qualifies THIS
     // number, and reading "$725.67" without "18 d" next to it is the whole problem.
     const priceBlock = t.best_price != null
-      ? `<div class="amount">${money(t.best_price)}</div><div class="dealer">${esc(t.best_dealer || '')}${ageChip(t.best_scraped_at)}</div>`
+      ? `<div class="amount">${money(t.best_price)}</div><div class="dealer">${esc(t.best_dealer || '')}${ageChip(t.best_scraped_at)}${copyBtn(t.best_url, `Copy the ${t.best_dealer || 'best'} link for ${t.name}`)}</div>`
       : `<div class="na">No price yet</div>`;
 
     return `<div class="card" data-tool="${t.tool_id}">
@@ -328,7 +328,9 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
     const qty = t.quantity && t.quantity > 1 ? `<span class="cr-qty">×${t.quantity}</span>` : '';
     const sub = esc(t.pn || t.model_number || '');
     return `<div class="check-row${t.owned ? ' owned' : ''}" data-tool="${t.tool_id}">
-      <button class="check-box${t.owned ? ' on' : ''}" data-check="${t.tool_id}" aria-label="Toggle have it">${t.owned ? '✓' : ''}</button>
+      <button class="check-box${t.owned ? ' on' : ''}" data-check="${t.tool_id}"
+        aria-pressed="${t.owned ? 'true' : 'false'}"
+        aria-label="${t.owned ? 'Bought' : 'Not bought yet'}: ${esc(t.name)}">${t.owned ? '✓' : ''}</button>
       <div class="cr-main">
         <div class="cr-name">${esc(t.name)} ${qty}</div>
         <div class="cr-sub">${sub}${badges.length ? ' ' + badges.join('') : ''}</div>
@@ -557,7 +559,11 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
           </div>
         </div>`;
       document.body.appendChild(el);
-      const close = (val) => { el.remove(); resolve(val); };
+      // Same rules as the detail overlay: Tab stays inside, Esc gets out, and
+      // focus goes back to the ✓ he tapped.
+      const opener = document.activeElement;
+      const release = trapFocus(el, () => close(null));
+      const close = (val) => { release(); el.remove(); opener?.focus?.(); resolve(val); };
       el.addEventListener('click', (e) => { if (e.target === el) close(null); });
       el.querySelector('#buySkip').onclick = () => close({}); // ticked, nothing recorded
       el.querySelector('#buySave').onclick = () => {
@@ -571,6 +577,40 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
       };
       setTimeout(() => el.querySelector('#buyPrice')?.focus(), 0);
     });
+  }
+
+  // ---- copy the best-price link ----------------------------------------
+  /**
+   * Two taps from "this is the one" to a link in a text message. clipboard is
+   * async and refused outside a secure context or without permission, so there's
+   * a fallback that always works — a copy button that silently does nothing is
+   * worse than no button.
+   */
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.cssText = 'position:fixed;top:-1000px;opacity:0';
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        ta.remove();
+        return ok;
+      } catch { return false; }
+    }
+  }
+
+  const copyBtn = (url, label = 'Copy link to the best price') =>
+    url ? `<button class="icon-btn copy-btn" data-copy="${esc(url)}" aria-label="${esc(label)}" title="${esc(label)}">⧉</button>` : '';
+
+  async function handleCopyClick(btn) {
+    const ok = await copyText(btn.getAttribute('data-copy'));
+    showToast(ok ? 'Link copied' : "Couldn't copy — long-press the link to copy it");
   }
 
   /** Transient message with one optional action. Replaces any current one. */
@@ -844,12 +884,66 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
   const detail = document.getElementById('detail');
   const detailBody = document.getElementById('detailBody');
   document.getElementById('detailClose').onclick = closeDetail;
+
+  // ---- focus trap ------------------------------------------------------
+  // An overlay that doesn't trap focus isn't really an overlay: Tab walks out
+  // into the page behind it, where a screen reader announces the list he can't
+  // see and a keyboard lands on buttons he can't reach.
+  const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  let lastFocused = null;
+
+  const focusablesIn = (root) =>
+    [...root.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null || el === document.activeElement);
+
+  /** Trap Tab inside `root` and close on Esc. Returns a teardown function. */
+  function trapFocus(root, onEscape) {
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); onEscape(); return; }
+      if (e.key !== 'Tab') return;
+      const items = focusablesIn(root);
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      // Wrap at both ends, and pull focus back in if it has escaped already.
+      if (e.shiftKey && (document.activeElement === first || !root.contains(document.activeElement))) {
+        e.preventDefault(); last.focus();
+      } else if (!e.shiftKey && (document.activeElement === last || !root.contains(document.activeElement))) {
+        e.preventDefault(); first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }
+
+  let releaseDetailTrap = null;
   detail.addEventListener('click', (e) => { if (e.target === detail) closeDetail(); });
-  function closeDetail() { detail.classList.add('hidden'); detail.setAttribute('aria-hidden', 'true'); }
+  function closeDetail() {
+    detail.classList.add('hidden');
+    detail.setAttribute('aria-hidden', 'true');
+    releaseDetailTrap?.(); releaseDetailTrap = null;
+    // Put focus back where he left it — otherwise closing the overlay dumps a
+    // keyboard user at the top of the document, having lost their place.
+    lastFocused?.focus?.(); lastFocused = null;
+  }
+
+  /** Show the overlay: remember the opener, move focus in, trap it there. */
+  function openOverlay() {
+    lastFocused = document.activeElement;
+    detail.classList.remove('hidden');
+    detail.setAttribute('aria-hidden', 'false');
+    releaseDetailTrap?.();
+    releaseDetailTrap = trapFocus(detail, closeDetail);
+    // Focus the panel itself first: it's the thing that was just announced, and
+    // it puts Tab at the start of the overlay rather than mid-way through it.
+    setTimeout(() => {
+      const panel = detail.querySelector('.detail-panel');
+      (focusablesIn(detail)[0] || panel)?.focus?.();
+    }, 0);
+  }
 
   async function openDetail(toolId) {
     const t = state.tools.find((x) => String(x.tool_id) === String(toolId));
-    detail.classList.remove('hidden'); detail.setAttribute('aria-hidden', 'false');
+    openOverlay();
     detailBody.innerHTML = '<div class="loading">Loading history…</div>';
     try {
       const listings = await SB.select('tool_listings',
@@ -923,6 +1017,20 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
       const legend = series.map((s) =>
         `<span class="k"><span class="sw" style="background:${s.color}"></span>${esc(s.label)}</span>`).join('');
 
+      // The chart is a silent picture to a screen reader — and to anyone who
+      // can't tell two dashed lines apart. Say what it shows in words: the
+      // numbers a glance at it is FOR (latest, range, how many dealers).
+      const allPts = series.flatMap((s) => s.points.map((p) => p.price)).filter((n) => n > 0);
+      const chartSummary = allPts.length
+        ? `Price history for ${esc(t?.name || 'this tool')}: ${series.length} dealer${series.length === 1 ? '' : 's'}, `
+          + `${allPts.length} price${allPts.length === 1 ? '' : 's'} recorded. `
+          + `Low ${money(Math.min(...allPts))}, high ${money(Math.max(...allPts))}. `
+          + series.map((s) => {
+            const last = s.points[s.points.length - 1];
+            return last ? `${esc(s.label)} latest ${money(last.price)}` : `${esc(s.label)} no price`;
+          }).join('. ') + '.'
+        : 'No price history recorded yet.';
+
       // One row per dealer, cheapest first; the lowest in-stock price is BEST —
       // this is the single "one deal per tool" the user buys from.
       //
@@ -950,8 +1058,9 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
             <div class="tool-sub">${last ? money(last.price_cad) + ' · ' + fmtDate(last.scraped_at) + ageChip(last.scraped_at) + staleChip(last, l.product_url) + fxNote(last) : 'no price yet — will scrape next run'}</div>
           </div>
           <div class="dealer-actions">
+            ${copyBtn(l.product_url, `Copy the ${l.dealer?.name || 'dealer'} link`)}
             <a href="${esc(l.product_url)}" target="_blank" rel="noopener">Open ↗</a>
-            <button class="link-x" data-remove-listing="${l.id}" title="Remove this link">✕</button>
+            <button class="link-x" data-remove-listing="${l.id}" aria-label="Stop tracking this link" title="Remove this link">✕</button>
           </div>
         </div>`;
       }).join('') || '<div class="note">No dealer links yet. Paste one below — its price refreshes on the next scrape run.</div>';
@@ -1009,7 +1118,8 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
         ${t?.target_price != null ? `<div class="note">Target: ${money(t.target_price)} ${t.at_or_below_target ? '— <span style="color:var(--green)">met ✓</span>' : ''}</div>` : ''}
         ${t?.notes ? `<div class="note" style="margin-top:8px">📝 ${esc(t.notes)}</div>` : ''}
         <div class="section-title">Price history</div>
-        <div class="hist-wrap">${chart}<div class="legend">${legend}</div></div>
+        <div class="hist-wrap" role="img" aria-label="${chartSummary}">${chart}<div class="legend">${legend}</div></div>
+        <p class="sr-only">${chartSummary}</p>
         <div class="dealer-list">${dealerRows}</div>
         ${suggestionsHTML}
         ${addForm}`;
@@ -1048,7 +1158,7 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
   function openEditForm(toolId) {
     if (!ensureKey()) return;
     const t = toolId ? state.tools.find((x) => String(x.tool_id) === String(toolId)) : null;
-    detail.classList.remove('hidden'); detail.setAttribute('aria-hidden', 'false');
+    openOverlay();
     const v = (x) => esc(x ?? '');
     // Standard categories are pre-loaded as suggestions; typing a new one still works.
     const cats = uniq([...CATEGORIES, ...state.tools.map((x) => x.category)]);
@@ -1241,7 +1351,7 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
     const cur = (payload && payload.currency ? String(payload.currency).trim().toUpperCase() : '');
     const nurl = normalizeUrl((payload && payload.url) || '');
     let host = ''; try { host = new URL(nurl).hostname.replace(/^www\./, ''); } catch { /* */ }
-    detail.classList.remove('hidden'); detail.setAttribute('aria-hidden', 'false');
+    openOverlay();
     if (!price || !/^https?:/i.test(nurl)) {
       detailBody.innerHTML = `<h2>Import captured price</h2><div class="note">Couldn't read a valid price and URL from that capture.</div><div class="form-actions"><button class="btn secondary" id="imCancel">Close</button></div>`;
       document.getElementById('imCancel').onclick = closeDetail; return;
@@ -1471,18 +1581,41 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
     const btn = e.target.closest('.tab'); if (!btn) return;
     document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b === btn));
     state.tab = btn.dataset.tab;
+    // Remember where he was. Re-opening the app on Deals and landing on
+    // Checklist every time is a small thing that gets old fast.
+    try { localStorage.setItem('bbt_last_tab', state.tab); } catch { /* private mode */ }
     render();
   });
   view.addEventListener('click', (e) => {
     const chk = e.target.closest('[data-check]');
     if (chk) { e.stopPropagation(); toggleOwned(chk.dataset.check); return; }
+    const cp = e.target.closest('[data-copy]');
+    // stopPropagation: copying is not "open this tool" — the button sits inside
+    // the row, and the overlay opening over a toast would swallow the feedback.
+    if (cp) { e.stopPropagation(); handleCopyClick(cp); return; }
     const row = e.target.closest('.card[data-tool], .check-row[data-tool]');
     if (row) openDetail(row.dataset.tool);
+  });
+  // The detail overlay has its own copy button (in the header), and its clicks
+  // never reach `view`.
+  detail.addEventListener('click', (e) => {
+    const cp = e.target.closest('[data-copy]');
+    if (cp) { e.stopPropagation(); handleCopyClick(cp); }
   });
   document.getElementById('refreshBtn').onclick = loadAll;
   document.getElementById('addToolBtn').onclick = () => openEditForm(null);
 
   // ---- boot ------------------------------------------------------------
+  // Restore the tab he was last on. Guarded against a stale/renamed value in
+  // localStorage — an unknown key would render nothing at all.
+  try {
+    const saved = localStorage.getItem('bbt_last_tab');
+    if (saved && RENDERERS[saved]) {
+      state.tab = saved;
+      document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === saved));
+    }
+  } catch { /* private mode — the default tab is fine */ }
+
   // One-time cleanup: purge any stale service_role key left in localStorage by
   // older builds — writes now use the revocable writer token, never the admin key.
   try { localStorage.removeItem('bbt_service_key'); } catch (e) { /* ignore */ }
