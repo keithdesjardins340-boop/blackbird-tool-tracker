@@ -153,6 +153,20 @@ Converted rows already store `price_original` + `fx_rate`; surface them: detail-
 converted prices get a small secondary line — `US$635.99 · 1.4051 · Jul 14`. It earns
 its place: it's the answer to "why does fluke.com say a different number than the app."
 
+### 2.8 Deploy the writer from CI, not by hand
+**Problem.** `supabase/functions/writer/` is deployed by copying its source into a
+deploy call. It's ~600 lines, and it is the ONLY write path the browser has: a
+hand-copy is a chance to corrupt it, and nothing checks that what's deployed matches
+what's in the repo. The repo is the source of truth everywhere else here; for this
+one file it's a convention held up by care.
+**Change.** A `deploy-writer.yml` on push to `main` (paths: `supabase/functions/**`)
+running the Supabase CLI (`supabase functions deploy writer --project-ref …`), with a
+`SUPABASE_ACCESS_TOKEN` repo secret. Keep `verify_jwt=false` — auth is the writer
+token, per the security model. **Done when** a push touching the function redeploys
+it with no hand-copying, and the deployed version matches the commit.
+**Needs him:** a Supabase access token minted and added as a GitHub secret. Costs
+nothing, but it's his credential — never read or paste it.
+
 ---
 
 ## 3. Polish as the list grows
@@ -180,8 +194,8 @@ sanctioned path for blocked dealers.
 
 | Session | Items |
 |---|---|
-| 1 | 1.6 test harness + fixtures (locks the traps in before touching anything else) |
-| 2 | 1.7 shared constants · 2.4 CACHE stamping · 2.5 weekly backup |
+| 1 | ✅ 1.6 test harness + fixtures (locks the traps in before touching anything else) |
+| 2 | 1.7 shared constants · 2.4 CACHE stamping · 2.5 weekly backup · 2.8 writer deploy |
 | 3 | 2.2 staleness guard · 2.7 conversion audit line |
 | 4 | 1.1 offline queue · 1.2 lazy sparklines |
 | 5 | 2.3 purchase capture + progress math |

@@ -90,7 +90,9 @@ read-only). Writes go through the writer function, authorized by a **writer toke
 ## 5. Hard rules
 
 - **No Node/npm locally.** Validate scraper changes with a real CI run + the run
-  report. You cannot run the scraper on his machine.
+  report. You cannot run the scraper on his machine. `test.yml` runs the test
+  suite on every push/PR and reports its counts to the run page — that's your
+  fastest honest feedback loop.
 - **No secrets in the repo, ever.**
 - **Migrations are append-only and numbered.** The next number is whatever's highest
   in `supabase/migrations/` plus one — read the folder, don't trust a number written
@@ -159,6 +161,12 @@ Live and verified end-to-end: quick-add, hostname dealers, bookmarklet capture,
 USD→CAD, the scrape button (`GH_PAT` is set), the broken-link alert, dealer-scoped
 price history, chart hover, the scrape clock, and the 3-tier checklist.
 
+**Tests:** `test.yml` (push + PR) runs two layers — pure-JS unit tests against
+saved fixtures (`scraper/test/`, `scraper/fixtures/`), and DB tests that apply
+every migration to a throwaway `postgres:16` and assert what the views promise.
+Every trap in §6 has a test that fails if it comes back. Add to them rather than
+around them.
+
 **Open / not done:** offline write-queue for checkmarks, lazy sparklines, overlay
-focus-trap + Esc, aria polish, copy-best-price-link, a `node:test` harness, and
-`report.js` hardcodes the −10% deal threshold instead of sharing `DEAL_PCT`.
+focus-trap + Esc, aria polish, copy-best-price-link, and `report.js` hardcodes
+the −10% deal threshold instead of sharing `DEAL_PCT`. See `docs/ROADMAP.md`.
