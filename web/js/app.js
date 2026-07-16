@@ -448,7 +448,12 @@
       } catch { cands = []; }
       cands = cands.filter((c) => !activeUrls.has(c.url)).slice(0, 6);
 
-      const series = (listings || []).map((l) => ({
+      // Only TRACKED links belong in the chart and the dealer list. Removing a link
+      // sets active=false (its history is kept) — if we rendered inactive rows here
+      // the ✕ would look broken, and worse, a removed link could still win BEST.
+      const live = (listings || []).filter((l) => l.active);
+
+      const series = live.map((l) => ({
         label: l.dealer?.name || `Listing ${l.id}`,
         listingId: l.id,
         points: (byListing[l.id] || []).map((s) => ({ t: s.scraped_at, price: Number(s.price_cad) })),
@@ -460,7 +465,7 @@
 
       // One row per dealer, cheapest first; the lowest in-stock price is BEST —
       // this is the single "one deal per tool" the user buys from.
-      const rows = (listings || []).map((l) => {
+      const rows = live.map((l) => {
         const last = (byListing[l.id] || []).slice(-1)[0];
         return { l, price: last ? Number(last.price_cad) : null, last };
       });

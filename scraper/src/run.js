@@ -37,6 +37,30 @@ async function isAnomaly(listingId, price) {
   return median > 0 && (price > median * 5 || price < median * 0.2);
 }
 
+// Cross-dealer sanity: the gate above only compares a listing to ITSELF, so a link
+// that is wrong EVERY time (a parser grabbing an add-on, an accessory, a deposit)
+// looks perfectly stable and would be crowned "best price". Compare against what
+// other dealers charge for the SAME tool instead — a price wildly out of line with
+// its siblings is a bad read, not a bargain. Needs >=2 siblings to have an opinion.
+async function isOutlierVsSiblings(listingId, toolId, price) {
+  if (!toolId || price == null || price <= 0) return false;
+  const { data: sibs } = await supabase
+    .from('tool_listings').select('id')
+    .eq('tool_id', toolId).eq('active', true).neq('id', listingId);
+  const ids = (sibs || []).map((s) => s.id);
+  if (ids.length < 2) return false;
+  const { data: snaps } = await supabase
+    .from('price_snapshots').select('listing_id,price_cad,scraped_at')
+    .in('listing_id', ids).eq('is_anomaly', false)
+    .order('scraped_at', { ascending: false });
+  const latest = new Map(); // newest clean price per sibling listing
+  for (const s of snaps || []) if (!latest.has(s.listing_id)) latest.set(s.listing_id, Number(s.price_cad));
+  const prices = [...latest.values()].filter((n) => n > 0).sort((a, b) => a - b);
+  if (prices.length < 2) return false;
+  const median = prices[Math.floor(prices.length / 2)];
+  return median > 0 && (price > median * 4 || price < median * 0.25);
+}
+
 async function scrapeDealer(dealer) {
   // Falls back to the generic manual-link adapter for any dealer without a
   // dedicated one, so pasted links from arbitrary sites still get priced.
@@ -70,7 +94,8 @@ async function scrapeDealer(dealer) {
       // 90-day average) assumes price_cad really is CAD. A non-CAD price we can't
       // convert throws here and is logged as a failure rather than stored wrong.
       const fx = await toCad(res);
-      const anomaly = await isAnomaly(listing.id, fx.price_cad);
+      const anomaly = (await isAnomaly(listing.id, fx.price_cad))
+        || (await isOutlierVsSiblings(listing.id, listing.tool_id, fx.price_cad));
       const { error: sErr } = await supabase.from('price_snapshots').insert({
         listing_id: listing.id,
         price_cad: fx.price_cad,

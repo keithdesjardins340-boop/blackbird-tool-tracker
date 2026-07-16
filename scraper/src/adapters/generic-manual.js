@@ -10,13 +10,30 @@ import { makeLoader, parsePrice, findJsonLdProduct, offerFromProduct, metaPrice,
 
 const CURRENCY_RE = /\$\s?([\d]{1,3}(?:,\d{3})*(?:\.\d{2})|\d+\.\d{2})/;
 
+// Sections whose prices are NOT this product's price: opt-in add-ons, warranty /
+// calibration upsells, accessories, "customers also bought", related items. They
+// are usually cheap, so grabbing one silently invents a bargain.
+// Real example (myflukestore.ca): a $135 warranty checkbox inside `.incentives-`
+// sits ABOVE the real <h2 class="productpage-price">$725.67</h2> in the DOM, so a
+// naive first-match reads the add-on and reports the meter at $135.
+const NOT_PRODUCT_PRICE = /incentive|add-?on|upsell|cross-?sell|related|recommend|accessor|warrant|bundle|also-?bought|you-?may|similar/i;
+
+function inExcludedSection($, el) {
+  return $(el).parents().toArray().some((p) => {
+    const attrs = `${$(p).attr('class') || ''} ${$(p).attr('id') || ''}`;
+    return NOT_PRODUCT_PRICE.test(attrs);
+  });
+}
+
 // Heuristic: scan price-flavoured elements for a currency amount. Kept narrow
 // (class/id/data-attr must mention "price") so we don't grab shipping thresholds
-// or "you save" figures elsewhere on the page.
+// or "you save" figures elsewhere on the page — and skipping add-on/related
+// sections so we price the product, not an upsell.
 function priceFromMarkup($) {
   let found = null;
   $('[data-price], [class*="price" i], [id*="price" i]').each((_, el) => {
     if (found != null) return;
+    if (inExcludedSection($, el)) return;
     const dp = $(el).attr('data-price') || $(el).attr('content');
     if (dp) { const p = parsePrice(dp); if (p != null && p > 0) { found = p; return; } }
     const m = CURRENCY_RE.exec($(el).text());
