@@ -98,6 +98,41 @@ test('kit words are junk for a meter, but not for a wrench SET', () => {
   assert.equal(matchCandidate(wrenches, { title: 'Tekton 122-Piece Combination Wrench Set', extracted_price: 2400, source: 'X' }, BAND).ok, true);
 });
 
+test('a PACKOUT insert FOR the tool is not the tool — the real one that got through', () => {
+  // Not hypothetical. Discovery run #4, 2026-07-16, first run that wrote leads:
+  // this exact title reached his inbox as a lead on a $328 impact wrench.
+  //
+  // It beat every existing gate. The title carries "2967-20", so the token gate
+  // — the strongest one — waved it through, and $101.34 / $328 = 0.31 sits
+  // inside the 0.25–4× band. An accessory named after its tool defeats a matcher
+  // that only checks for the tool's name.
+  const wrench = {
+    name: 'Milwaukee Tool M18 FUEL 1/2" High Torque Impact Wrench w/ Friction Ring (Tool Only)',
+    discovery_query: 'Milwaukee 2967-20',
+    best_price_cad: 328,
+  };
+  const insert = {
+    title: 'M18 1/2" High Torque Impact 2967-20 Insert - Milwaukee PACKOUT Tool Organizer',
+    extracted_price: 101.34,
+    source: 'Etsy',
+  };
+  assert.equal(matchCandidate(wrench, insert, BAND).reason, 'accessory');
+
+  // The tool it should NOT block: the actual wrench, same run, same query.
+  assert.equal(matchCandidate(wrench, {
+    title: 'Milwaukee 1/2" High Torque Impact Wrench 2967-20', extracted_price: 318, source: 'Amazon CA',
+  }, BAND).ok, true);
+});
+
+test('when the organizer IS the tool, "organizer" stops being junk', () => {
+  // The reason this is conditional and not a flat reject word. Same shape as the
+  // kit rule: his list is allowed to contain the accessory as a first-class item.
+  const box = { name: 'Milwaukee PACKOUT Tool Organizer', discovery_query: 'Milwaukee PACKOUT organizer', best_price_cad: 90 };
+  assert.equal(matchCandidate(box, {
+    title: 'Milwaukee PACKOUT Tool Organizer', extracted_price: 74, source: 'X',
+  }, BAND).ok, true);
+});
+
 test('tokenizer keeps identity, drops marketing', () => {
   const t = tokenizeQuery('Fluke 87V Max True RMS Industrial Digital Multimeter');
   assert.ok(t.includes('87v'), 'the model number is the identity');

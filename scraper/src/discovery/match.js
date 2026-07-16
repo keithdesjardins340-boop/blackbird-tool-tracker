@@ -25,6 +25,23 @@ const REJECT_TERMS = [
 const USED_TERMS = ['refurbished', 'refurb', 'open box', 'open-box', 'renewed', 'pre-owned', 'used'];
 const KIT_TERMS = ['kit', 'bundle', 'set'];
 
+/**
+ * Things sold FOR the tool, named AFTER the tool — so they carry every model
+ * number the token gate looks for and sail straight through it.
+ *
+ * Found in the first real run, 2026-07-16: an Etsy PACKOUT foam insert for the
+ * 2967-20, $101.34 against a $328 tool. Title said "2967-20", price landed
+ * inside the 0.25–4× band, so every other gate waved it past. That is the
+ * myflukestore trap wearing the right model number.
+ *
+ * Conditional like KIT_TERMS, not absolute like REJECT_TERMS: if he ever tracks
+ * an actual PACKOUT organizer, "organizer" is the tool, not the noise.
+ */
+const ACCESSORY_TERMS = [
+  'insert', 'organizer', 'foam', 'packout', 'tray', 'liner', 'bin',
+  'skin', 'sleeve', 'wrap', 'label', 'mount', 'bracket', 'hook', 'rack',
+];
+
 /** Generic words that carry no identity — dropping them keeps the gate strict
  *  on the parts that matter (model numbers, variants) and lax on marketing. */
 const STOPWORDS = new Set([
@@ -37,10 +54,15 @@ const VARIANT_WORDS = new Set(['max', 'plus', 'xl', 'xr', 'hd', 'ii', 'iii', 'mk
 
 const norm = (s) => ` ${String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
 
+/** Words the tool names for itself are never junk when seen in a candidate. */
+function toolSays(tool, terms) {
+  const hay = norm(`${tool?.name || ''} ${tool?.discovery_query || ''}`);
+  return terms.some((t) => hay.includes(` ${t} `));
+}
+
 /** Does the tool itself sound like a kit/set? Then "set" isn't a reject word. */
 export function toolIsKit(tool) {
-  const hay = norm(`${tool?.name || ''} ${tool?.discovery_query || ''}`);
-  return KIT_TERMS.some((t) => hay.includes(` ${t} `));
+  return toolSays(tool, KIT_TERMS);
 }
 
 /**
@@ -81,6 +103,10 @@ export function matchCandidate(tool, cand, opts) {
   // Only treat kit words as junk when he isn't shopping for a kit.
   if (!toolIsKit(tool) && KIT_TERMS.some((t) => hay.includes(` ${t} `))) {
     return { ok: false, reason: 'kit-mismatch' };
+  }
+  // Same shape for accessories: junk unless the tool itself is that thing.
+  if (!toolSays(tool, ACCESSORY_TERMS) && ACCESSORY_TERMS.some((t) => hay.includes(` ${t} `))) {
+    return { ok: false, reason: 'accessory' };
   }
 
   const tokens = tokenizeQuery(tool?.discovery_query || tool?.name || '');
