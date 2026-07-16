@@ -151,11 +151,14 @@ read-only). Writes go through the writer function, authorized by a **writer toke
 
 ## 8. Current state
 
-One tool — **"87V Max" (Tier 1)** — with 4 dealer links (itm.com $725.67 best,
+He is rebuilding his list **by hand** after a deliberate full wipe, so it's a
+handful of tools and growing — read the tables, don't trust a count written here.
+The first is **"87V Max" (Tier 1)** with 4 dealer links (itm.com and
 myflukestore.ca $725.67, Amazon.ca $854.77, fluke.com $893.50 converted from
-$635.99 USD). He is rebuilding his list by hand after a deliberate full wipe; the
-pre-wipe 295-tool list is backed up at
-`backups/blackbird-FULL-BACKUP-pre-wipe.json` (kept off-repo — this repo is public).
+$635.99 USD); dealers beyond the five modelled ones (itm.com, tekton.com, …) are
+auto-registered from the hostnames he pastes. The pre-wipe 295-tool list is backed
+up at `backups/blackbird-FULL-BACKUP-pre-wipe.json` (kept off-repo — this repo is
+public).
 
 Live and verified end-to-end: quick-add, hostname dealers, bookmarklet capture,
 USD→CAD, the scrape button (`GH_PAT` is set), the broken-link alert, dealer-scoped
