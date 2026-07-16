@@ -341,6 +341,56 @@ test('listing_latest_price exposes parse_via, so the dashboard can mirror the ru
   assert.ok(def.includes('parse_via'), 'the detail overlay needs parse_via to agree with the view');
 });
 
+// ---- purchase capture -------------------------------------------------------
+
+test('a recorded purchase surfaces with the dealer he bought from', async () => {
+  const tool = await seedTool('87V Max (bought)');
+  const d = await seedDealer('Test bought-from dealer');
+  const l = await seedListing(tool, d, 'https://bought.example/87v');
+  await snap(l, 725.67);
+  await client.query(
+    `update tools set owned = true, purchase_price_cad = 699.99,
+            purchased_at = now(), purchase_listing_id = $2 where id = $1`,
+    [tool, l],
+  );
+
+  const s = await marketStatus(tool);
+  assert.equal(Number(s.purchase_price_cad), 699.99, 'what he paid, not the listed price');
+  assert.equal(s.purchase_dealer, 'Test bought-from dealer');
+  assert.ok(s.purchased_at);
+  assert.equal(Number(s.best_price), 725.67, 'the market price still tracks alongside it');
+});
+
+test('deleting the dealer link keeps the fact that he bought it', async () => {
+  // ON DELETE SET NULL, not CASCADE. Removing a link is a tracking decision;
+  // it must not quietly erase a $700 purchase from his capex record.
+  const tool = await seedTool('87V Max (link deleted)');
+  const d = await seedDealer('Test vanishing dealer');
+  const l = await seedListing(tool, d, 'https://vanishing.example/87v');
+  await client.query(
+    `update tools set owned = true, purchase_price_cad = 699.99,
+            purchased_at = now(), purchase_listing_id = $2 where id = $1`,
+    [tool, l],
+  );
+  await client.query('delete from tool_listings where id = $1', [l]);
+
+  const row = await one('select owned, purchase_price_cad, purchase_listing_id from tools where id = $1', [tool]);
+  assert.equal(row.owned, true);
+  assert.equal(Number(row.purchase_price_cad), 699.99, 'the price he paid survives');
+  assert.equal(row.purchase_listing_id, null, 'only the pointer to where goes');
+});
+
+test('purchase fields are nullable — Skip must stay a valid answer', async () => {
+  // The confirm is optional by design: a checkmark can never become a form he
+  // has to fill in to tick a tool off in a parts aisle.
+  const tool = await seedTool('87V Max (skipped)');
+  await client.query('update tools set owned = true where id = $1', [tool]);
+  const s = await marketStatus(tool);
+  assert.equal(s.owned, true);
+  assert.equal(s.purchase_price_cad, null);
+  assert.equal(s.purchased_at, null);
+});
+
 // ---- the attachListing() contract, against the real constraint --------------
 
 /** Mirror of the writer's attachListing(), over SQL instead of PostgREST. */

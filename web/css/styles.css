@@ -157,6 +157,30 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 16px 14px 48px; }
   color: var(--warn-ink); border: 1px solid var(--warn-ink); background: var(--card); white-space: nowrap; }
 .pending-badge.err { color: var(--crit); border-color: var(--crit); }
 
+/* Purchase capture ---------------------------------------------------- */
+/* The money line under a tier title. Monochrome: it's information, not a
+   judgement — the tier ramp beside it already carries the priority colour. */
+.money-line { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.money-line b { color: var(--ink); font-weight: 700; }
+/* A tool he's bought shows what he PAID, not today's price. */
+.cr-price.paid .amount { color: var(--ink); }
+.cr-price.paid .cr-dealer { color: var(--muted); }
+
+/* Two-field confirm on ✓. A sheet, not a page: he's mid-tap in an aisle. */
+.sheet { position: fixed; inset: 0; z-index: 200; background: rgba(9,9,11,.45);
+  display: flex; align-items: flex-end; justify-content: center; }
+.sheet-card { background: var(--card); width: 100%; max-width: 460px; border-radius: 14px 14px 0 0;
+  padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); border: 1px solid var(--line); border-bottom: 0; }
+.sheet-title { font-weight: 800; font-size: 16px; }
+.sheet-sub { color: var(--muted); font-size: 13px; margin: 2px 0 12px; }
+.sheet .fld { display: block; margin-bottom: 10px; }
+.sheet .fld > span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.sheet .fld input, .sheet .fld select { width: 100%; padding: 10px; font-size: 16px; /* 16px: iOS won't zoom */
+  border: 1px solid var(--line-2); border-radius: 8px; background: var(--card); color: var(--ink); }
+.sheet-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+.btn-ghost { background: var(--card); color: var(--muted); border-color: var(--line-2); }
+@media (min-width: 560px) { .sheet { align-items: center; } .sheet-card { border-radius: 14px; border-bottom: 1px solid var(--line); } }
+
 .delta { font-weight: 700; font-size: 13px; color: var(--muted); }
 .delta.up { color: var(--crit); }        /* price went up — bad for a buyer */
 .delta.down { color: var(--good-ink); }  /* price dropped — good */

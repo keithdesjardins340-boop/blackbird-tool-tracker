@@ -144,25 +144,56 @@ function normCurrency(raw: unknown): string | null {
   return null;
 }
 
-async function rateToCad(cur: string): Promise<number> {
+// Mirror of scraper/src/util/fx.js FX_MAX_AGE_DAYS — how stale a remembered
+// rate may be before we go back to rejecting the price outright.
+const FX_MAX_AGE_DAYS = 7;
+
+// deno-lint-ignore no-explicit-any
+async function rateToCad(admin: any, cur: string): Promise<number> {
   if (cur === "CAD") return 1;
   if (fxCache.has(cur)) return fxCache.get(cur)!;
   const series = FX_SERIES[cur];
   if (!series) throw new Error(`No CAD conversion rate is available for ${cur}.`);
-  const r = await fetch(`https://www.bankofcanada.ca/valet/observations/${series}/json?recent=1`,
-    { headers: { Accept: "application/json" } });
-  if (!r.ok) throw new Error(`Couldn't reach the Bank of Canada for a ${cur}→CAD rate — price not saved.`);
-  const j = await r.json();
-  const rate = Number(j?.observations?.[0]?.[series]?.v);
-  if (!Number.isFinite(rate) || rate <= 0) throw new Error(`Bad ${cur}→CAD rate — price not saved.`);
-  fxCache.set(cur, rate);
-  return rate;
+  try {
+    const r = await fetch(`https://www.bankofcanada.ca/valet/observations/${series}/json?recent=1`,
+      { headers: { Accept: "application/json" } });
+    if (!r.ok) throw new Error(`Couldn't reach the Bank of Canada for a ${cur}→CAD rate — price not saved.`);
+    const j = await r.json();
+    const obs = j?.observations?.[0];
+    const rate = Number(obs?.[series]?.v);
+    if (!Number.isFinite(rate) || rate <= 0) throw new Error(`Bad ${cur}→CAD rate — price not saved.`);
+    fxCache.set(cur, rate);
+    // Remember it, dated by Valet's own observation day rather than now — the
+    // rate's real age is what the staleness check needs.
+    try {
+      await admin.from("fx_rates").upsert({
+        currency: cur, rate,
+        as_of: obs?.d ? new Date(obs.d).toISOString() : new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "currency" });
+    } catch { /* caching is best-effort; never fail a good conversion over it */ }
+    return rate;
+  } catch (liveErr) {
+    // Fail-closed still stands — this only allows YESTERDAY'S OFFICIAL rate, never
+    // a guess, and only inside the window.
+    let row: { rate?: number; as_of?: string } | null = null;
+    try {
+      const { data } = await admin.from("fx_rates").select("rate,as_of").eq("currency", cur).maybeSingle();
+      row = data || null;
+    } catch { row = null; }
+    const rate = Number(row?.rate);
+    const ageDays = row?.as_of ? (Date.now() - Date.parse(row.as_of)) / 86400000 : Infinity;
+    if (!(rate > 0) || !Number.isFinite(ageDays) || ageDays > FX_MAX_AGE_DAYS) throw liveErr;
+    fxCache.set(cur, rate);
+    return rate;
+  }
 }
 
 /** An undeclared currency is assumed CAD (the norm for the Canadian dealers here). */
-async function toCad(price: number, regular: number | null, currency: unknown) {
+// deno-lint-ignore no-explicit-any
+async function toCad(admin: any, price: number, regular: number | null, currency: unknown) {
   const cur = normCurrency(currency) || "CAD";
-  const fx_rate = await rateToCad(cur);
+  const fx_rate = await rateToCad(admin, cur);
   const conv = (v: number | null) => (v == null ? null : Math.round(v * fx_rate * 100) / 100);
   return {
     price_cad: conv(price) as number,
@@ -247,9 +278,34 @@ async function handle(admin: any, op: string, p: Record<string, any>) {
 
   switch (op) {
     case "toggle_owned": {
+      // Ticking a tool off can also record the buy: dealer + what he paid.
+      // Every field is optional — "Skip" sends none of them and just ticks.
+      //
+      // This op is the ONLY one the offline queue may replay (web/js/queue.js),
+      // which is why it must stay a pure END-STATE write: the payload describes
+      // what should be true, never a delta. It still does.
       req(asInt(p.id), "id required");
-      const { error } = await admin.from("tools").update({ owned: !!p.owned, updated_at: new Date().toISOString() }).eq("id", asInt(p.id));
-      if (error) throw error; return { id: asInt(p.id), owned: !!p.owned };
+      const owned = !!p.owned;
+      const price = Number(p.purchase_price_cad);
+      const fields: Record<string, unknown> = { owned, updated_at: new Date().toISOString() };
+      if (owned) {
+        fields.purchase_price_cad = Number.isFinite(price) && price > 0 ? price : null;
+        fields.purchase_listing_id = asInt(p.purchase_listing_id);
+        // Trust the client's timestamp when it sends one: a queued tick happened
+        // when he TAPPED it, in the aisle, not whenever the queue drained.
+        fields.purchased_at = (fields.purchase_price_cad != null || fields.purchase_listing_id != null)
+          ? (typeof p.purchased_at === "string" ? p.purchased_at : new Date().toISOString())
+          : null;
+      } else {
+        // Unticking says he doesn't have it — so there's no purchase to remember.
+        // (The dashboard offers an undo, which simply re-sends the old values.)
+        fields.purchase_price_cad = null;
+        fields.purchase_listing_id = null;
+        fields.purchased_at = null;
+      }
+      const { error } = await admin.from("tools").update(fields).eq("id", asInt(p.id));
+      if (error) throw error;
+      return { id: asInt(p.id), owned, purchase_price_cad: fields.purchase_price_cad, purchased_at: fields.purchased_at };
     }
     case "update_tool": {
       req(asInt(p.id), "id required");
@@ -363,7 +419,7 @@ async function handle(admin: any, op: string, p: Record<string, any>) {
       req(listing, "listing not found");
       await admin.from("tool_listings").update({ active: true }).eq("id", listing.id); // a manual capture proves the link is live
       const rp = Number(p.regular_price);
-      const fx = await toCad(price, Number.isFinite(rp) ? rp : null, p.currency);
+      const fx = await toCad(admin, price, Number.isFinite(rp) ? rp : null, p.currency);
       const anomaly = await isAnomaly(admin, listing.id, fx.price_cad);
       const { error } = await admin.from("price_snapshots")
         .insert({ ...snapshotRow(listing.id, fx, p), is_anomaly: anomaly });
@@ -404,7 +460,7 @@ async function handle(admin: any, op: string, p: Record<string, any>) {
         listingId = created.id;
       }
       const rp = Number(p.regular_price);
-      const fx = await toCad(price, Number.isFinite(rp) ? rp : null, p.currency);
+      const fx = await toCad(admin, price, Number.isFinite(rp) ? rp : null, p.currency);
       const anomaly = await isAnomaly(admin, listingId, fx.price_cad);
       const { error: sErr } = await admin.from("price_snapshots")
         .insert({ ...snapshotRow(listingId, fx, p), is_anomaly: anomaly });

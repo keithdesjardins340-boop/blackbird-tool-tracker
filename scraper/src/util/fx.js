@@ -28,19 +28,52 @@ export function normCurrency(raw) {
   return null;
 }
 
-/** CAD per 1 unit of `cur`. Throws if we can't get a trustworthy rate. */
-export async function rateToCad(cur) {
+/**
+ * How stale a remembered rate may be before we go back to rejecting the price.
+ * A week of drift on a $900 meter is a few dollars; a month during a currency
+ * move is the ~40% error this module exists to prevent, wearing a different hat.
+ */
+export const FX_MAX_AGE_DAYS = 7;
+
+/**
+ * CAD per 1 unit of `cur`. Throws if we can't get a trustworthy rate.
+ *
+ * `store` is an optional persistent cache — `{ get(cur), put(cur, rate, asOf) }`
+ * — injected by the caller (run.js backs it with the fx_rates table). It's a
+ * parameter rather than an import so this module stays pure and testable: the
+ * scraper's Supabase client exits the process when its env vars are absent.
+ *
+ * With no store, behaviour is exactly as before: live rate or throw.
+ */
+export async function rateToCad(cur, store) {
   if (cur === 'CAD') return 1;
   if (cache.has(cur)) return cache.get(cur);
   const series = SERIES[cur];
   if (!series) throw new Error(`no CAD conversion rate available for ${cur}`);
-  const url = `https://www.bankofcanada.ca/valet/observations/${series}/json?recent=1`;
-  const json = JSON.parse(await fetchText(url, { headers: { Accept: 'application/json' }, timeoutMs: 12000, retries: 2 }));
-  const obs = (json.observations || [])[0];
-  const rate = Number(obs?.[series]?.v);
-  if (!Number.isFinite(rate) || rate <= 0) throw new Error(`bad ${cur}→CAD rate from Bank of Canada`);
-  cache.set(cur, rate);
-  return rate;
+  try {
+    const url = `https://www.bankofcanada.ca/valet/observations/${series}/json?recent=1`;
+    const json = JSON.parse(await fetchText(url, { headers: { Accept: 'application/json' }, timeoutMs: 12000, retries: 2 }));
+    const obs = (json.observations || [])[0];
+    const rate = Number(obs?.[series]?.v);
+    if (!Number.isFinite(rate) || rate <= 0) throw new Error(`bad ${cur}→CAD rate from Bank of Canada`);
+    cache.set(cur, rate);
+    // Remember it for the next run that finds Valet down.
+    try { await store?.put?.(cur, rate, obs?.d || null); } catch { /* caching is best-effort */ }
+    return rate;
+  } catch (liveErr) {
+    // Valet unreachable, slow, or talking nonsense. Yesterday's OFFICIAL rate is
+    // a good answer; a guess never is. Fall back only within FX_MAX_AGE_DAYS,
+    // otherwise keep failing closed exactly as before.
+    let cached = null;
+    try { cached = (await store?.get?.(cur)) || null; } catch { cached = null; }
+    if (!cached || !(Number(cached.rate) > 0)) throw liveErr;
+    const ageDays = (Date.now() - Date.parse(cached.as_of)) / 86400000;
+    if (!Number.isFinite(ageDays) || ageDays > FX_MAX_AGE_DAYS) throw liveErr;
+    const rate = Number(cached.rate);
+    cache.set(cur, rate);
+    console.warn(`  ~ Bank of Canada unreachable for ${cur}; using the rate from ${String(cached.as_of).slice(0, 10)} (${rate})`);
+    return rate;
+  }
 }
 
 /**
@@ -48,9 +81,9 @@ export async function rateToCad(cur) {
  * Returns { price_cad, regular_price_cad, currency, price_original, fx_rate }.
  * An undeclared currency is assumed CAD (the status quo for Canadian dealers).
  */
-export async function toCad({ price, regular_price, currency }) {
+export async function toCad({ price, regular_price, currency }, store) {
   const cur = normCurrency(currency) || 'CAD';
-  const fx_rate = await rateToCad(cur); // throws on a non-CAD price we can't convert
+  const fx_rate = await rateToCad(cur, store); // throws on a non-CAD price we can't convert
   const conv = (v) => (v == null ? null : Math.round(v * fx_rate * 100) / 100);
   return {
     price_cad: conv(price),

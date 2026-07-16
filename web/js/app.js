@@ -317,9 +317,14 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
     if (t.on_sale) badges.push('<span class="badge sale">sale</span>');
     if (t.at_or_below_target) badges.push('<span class="badge target">≤ target</span>');
     if (t.best_source === 'auto-desc') badges.push('<span class="verify-tag">≈ verify</span>');
-    const price = priced
-      ? `<div class="cr-price"><span class="amount">${money(t.best_price)}</span><span class="cr-dealer">${esc(t.best_dealer || '')}${ageChip(t.best_scraped_at)}</span></div>`
-      : `<div class="cr-price na">—</div>`;
+    // Once he's bought it, what he PAID is the true number for that row — the
+    // current best price is just noise on a tool he already owns.
+    const bought = t.owned && t.purchase_price_cad != null;
+    const price = bought
+      ? `<div class="cr-price paid"><span class="amount">${money(t.purchase_price_cad)}</span><span class="cr-dealer">paid${t.purchase_dealer ? ' · ' + esc(t.purchase_dealer) : ''}</span></div>`
+      : priced
+        ? `<div class="cr-price"><span class="amount">${money(t.best_price)}</span><span class="cr-dealer">${esc(t.best_dealer || '')}${ageChip(t.best_scraped_at)}</span></div>`
+        : `<div class="cr-price na">—</div>`;
     const qty = t.quantity && t.quantity > 1 ? `<span class="cr-qty">×${t.quantity}</span>` : '';
     const sub = esc(t.pn || t.model_number || '');
     return `<div class="check-row${t.owned ? ' owned' : ''}" data-tool="${t.tool_id}">
@@ -350,10 +355,49 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
     'Storage & Organization', 'Safety & Spill', 'Consumables & Hardware',
   ];
 
-  function progressBar(owned, total) {
+  /**
+   * The money behind a set of tools: what he's recorded paying, and what the
+   * rest would cost at today's best price.
+   *
+   * `remaining` is an estimate and says so ("≈"). It multiplies by `quantity`
+   * (four of a wrench is four prices), and it counts ONLY unowned tools that
+   * actually have a price — so it names how many it couldn't count rather than
+   * quietly understating the number. An honest "(3 unpriced)" is worth more than
+   * a total that looks precise and isn't.
+   *
+   * These rules are mirrored in scraper/test/purchase-math.test.js (there's no
+   * build step here, so they can't be imported). Change them in both.
+   */
+  function money_stats(items) {
+    let spent = 0, remaining = 0, unpriced = 0;
+    for (const t of items) {
+      if (t.owned) {
+        if (t.purchase_price_cad != null) spent += Number(t.purchase_price_cad);
+        continue;
+      }
+      if (t.best_price != null) remaining += Number(t.best_price) * (Number(t.quantity) || 1);
+      else unpriced++;
+    }
+    return { spent, remaining, unpriced };
+  }
+
+  function moneyLine(items) {
+    const { spent, remaining, unpriced } = money_stats(items);
+    if (!spent && !remaining && !unpriced) return '';
+    const bits = [];
+    if (spent) bits.push(`spent <b>${money(spent)}</b>`);
+    if (remaining) bits.push(`remaining ≈ <b>${money(remaining)}</b> at today's best`);
+    if (unpriced) bits.push(`<span class="muted">(${unpriced} unpriced)</span>`);
+    return `<div class="money-line">${bits.join(' · ')}</div>`;
+  }
+
+  function progressBar(owned, total, items) {
     const pct = total ? Math.round((owned / total) * 100) : 0;
-    return `<div class="prog"><div class="prog-bar"><span style="width:${pct}%"></span></div>
-      <div class="prog-label">${owned} / ${total} have · ${pct}%</div></div>`;
+    return `<div class="prog">
+      <div class="prog-bar" role="progressbar" aria-valuenow="${owned}" aria-valuemin="0" aria-valuemax="${total}"
+           aria-label="${owned} of ${total} tools bought"><span style="width:${pct}%"></span></div>
+      <div class="prog-label">${owned} / ${total} have · ${pct}%</div>
+      ${items ? moneyLine(items) : ''}</div>`;
   }
 
   function catBlocks(items) {
@@ -374,7 +418,7 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
     const keyWarn = SB.hasWriterToken() ? ''
       : '<div class="keybar">Add your access token in <b>Settings</b> to save checkmarks and edits.</div>';
     let html = filtersBar() + keyWarn
-      + progressBar(list.filter((t) => t.owned).length, list.length);
+      + progressBar(list.filter((t) => t.owned).length, list.length, list);
 
     // Group into Tier windows in buy order; unknown tiers fall to the end.
     const byTier = {};
@@ -392,7 +436,10 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
       const o = items.filter((t) => t.owned).length;
       html += `<section class="tier-window" data-tier="${esc(tk)}">
         <div class="tier-head">
-          <div><div class="tier-title">${esc(meta ? meta.label : tk)}</div></div>
+          <div>
+            <div class="tier-title">${esc(meta ? meta.label : tk)}</div>
+            ${moneyLine(items)}
+          </div>
           <div class="tier-count">${o}/${items.length}</div>
         </div>
         ${items.length ? catBlocks(items) : '<div class="note" style="padding:4px 0 6px">Nothing here yet — add a tool with the ＋ button.</div>'}
@@ -402,6 +449,34 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
     wireFilters();
   }
 
+  /**
+   * Write a tick (and any purchase record) through the queue-aware write path.
+   * Optimistic: the row already shows `fields`, so a failure puts it back.
+   */
+  async function saveOwned(t, fields, prev) {
+    Object.assign(t, fields);
+    render();
+    try {
+      // Offline, this returns {queued:true} and the ✓ stands: it's saved locally
+      // and will sync. The optimistic flip IS the queued state, so the screen
+      // matches what's going to happen rather than lying and snapping back.
+      await SB.writeApi('toggle_owned', {
+        id: t.tool_id,
+        owned: !!fields.owned,
+        purchase_price_cad: fields.purchase_price_cad ?? null,
+        purchase_listing_id: fields.purchase_listing_id ?? null,
+        purchased_at: fields.purchased_at ?? null,
+      });
+      await syncPendingUI();
+      return true;
+    } catch (e) {
+      Object.assign(t, prev);
+      render();
+      alert('Could not save: ' + e.message);
+      return false;
+    }
+  }
+
   async function toggleOwned(toolId) {
     if (!SB.hasWriterToken()) {
       alert('Add your access token in the Settings tab to save checkmarks.');
@@ -409,19 +484,109 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
     }
     const t = state.tools.find((x) => String(x.tool_id) === String(toolId));
     if (!t) return;
-    const next = !t.owned;
-    t.owned = next;              // optimistic
-    render();
-    try {
-      // Offline, this returns {queued:true} and the ✓ stands: it's saved locally
-      // and will sync. The optimistic flip IS the queued state, so the screen
-      // matches what's going to happen rather than lying and snapping back.
-      await SB.writeApi('toggle_owned', { id: toolId, owned: next });
-      await syncPendingUI();
-    } catch (e) {
-      t.owned = !next; render();
-      alert('Could not save: ' + e.message);
+    const prev = {
+      owned: t.owned,
+      purchase_price_cad: t.purchase_price_cad ?? null,
+      purchased_at: t.purchased_at ?? null,
+      purchase_listing_id: t.purchase_listing_id ?? null,
+      purchase_dealer: t.purchase_dealer ?? null,
+    };
+
+    if (!t.owned) {
+      // Ticking ON: offer to record the buy. openPurchaseSheet resolves with the
+      // fields to save — Skip resolves with just the tick, so the fast path stays
+      // one tap and a tap, which is all it can be in a parts aisle.
+      const rec = await openPurchaseSheet(t);
+      if (rec === null) return; // dismissed — don't tick at all
+      await saveOwned(t, { owned: true, ...rec }, prev);
+      return;
     }
+
+    // Ticking OFF clears the purchase — he doesn't have it, so there's nothing
+    // he paid. That's real data to throw away, so it's undoable.
+    const ok = await saveOwned(t, {
+      owned: false, purchase_price_cad: null, purchased_at: null,
+      purchase_listing_id: null, purchase_dealer: null,
+    }, prev);
+    if (ok && prev.purchase_price_cad != null) {
+      showToast(`Cleared what you paid for ${t.name}`, 'Undo', async () => {
+        await saveOwned(t, prev, { owned: false });
+      });
+    }
+  }
+
+  /**
+   * Two fields, both pre-filled from today's best price: where he bought it and
+   * what he paid. Returns the fields to save, {} for Skip, or null if dismissed.
+   */
+  async function openPurchaseSheet(t) {
+    // The dealers he could have bought from. Fetched per tool rather than loaded
+    // for the whole list — it's one small read, and only when he actually buys.
+    // Offline this throws, and the BEST dealer alone is a good enough answer:
+    // being unable to name a second dealer must not block the tick.
+    let live = [];
+    try {
+      const rows = await SB.select('tool_listings',
+        `select=id,dealer:dealers(name)&tool_id=eq.${t.tool_id}&active=eq.true`);
+      live = (rows || []).map((l) => ({ id: l.id, dealer: l.dealer?.name || `Dealer ${l.id}` }));
+    } catch {
+      live = t.best_listing_id ? [{ id: t.best_listing_id, dealer: t.best_dealer || 'Best dealer' }] : [];
+    }
+    return new Promise((resolve) => {
+      const bestId = t.best_listing_id;
+      // Default to the dealer the app has been telling him is best, at the price
+      // it has been showing — the overwhelmingly likely answer, so the common
+      // case is Save with nothing typed.
+      const opts = live.length
+        ? live.map((l) => `<option value="${l.id}"${String(l.id) === String(bestId) ? ' selected' : ''}>${esc(l.dealer)}</option>`).join('')
+        : `<option value="">(no dealer links)</option>`;
+      const el = document.createElement('div');
+      el.className = 'sheet';
+      el.innerHTML = `
+        <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="buyTitle">
+          <div class="sheet-title" id="buyTitle">Got it — what did you pay?</div>
+          <div class="sheet-sub">${esc(t.name)}</div>
+          <label class="fld"><span>Dealer</span><select id="buyDealer">${opts}</select></label>
+          <label class="fld"><span>Price paid (CAD)</span>
+            <input id="buyPrice" type="number" inputmode="decimal" step="0.01" min="0"
+                   value="${t.best_price != null ? esc(String(t.best_price)) : ''}" placeholder="—" />
+          </label>
+          <div class="sheet-actions">
+            <button class="btn btn-ghost" id="buySkip">Skip</button>
+            <button class="btn" id="buySave">Save</button>
+          </div>
+        </div>`;
+      document.body.appendChild(el);
+      const close = (val) => { el.remove(); resolve(val); };
+      el.addEventListener('click', (e) => { if (e.target === el) close(null); });
+      el.querySelector('#buySkip').onclick = () => close({}); // ticked, nothing recorded
+      el.querySelector('#buySave').onclick = () => {
+        const price = Number(el.querySelector('#buyPrice').value);
+        const listingId = el.querySelector('#buyDealer').value || null;
+        close({
+          purchase_price_cad: Number.isFinite(price) && price > 0 ? price : null,
+          purchase_listing_id: listingId ? Number(listingId) : null,
+          purchased_at: new Date().toISOString(),
+        });
+      };
+      setTimeout(() => el.querySelector('#buyPrice')?.focus(), 0);
+    });
+  }
+
+  /** Transient message with one optional action. Replaces any current one. */
+  function showToast(msg, actionLabel, onAction) {
+    document.getElementById('appToast')?.remove();
+    const t = document.createElement('div');
+    t.id = 'appToast'; t.className = 'toast';
+    t.innerHTML = `<span>${esc(msg)}</span>`;
+    if (actionLabel) {
+      const b = document.createElement('button');
+      b.className = 'btn btn-sm'; b.textContent = actionLabel;
+      b.onclick = () => { t.remove(); onAction?.(); };
+      t.appendChild(b);
+    }
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 8000); // long enough to read and reach for Undo
   }
 
   // ---- offline write queue --------------------------------------------
@@ -1247,6 +1412,11 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
       .map((t) => ({
         name: t.name, brand: t.brand || '', pn: t.pn || '', category: t.category || '', tier: t.tier || '',
         quantity: t.quantity || 1, owned: t.owned ? 'yes' : 'no',
+        // What he actually paid — this export is his capex record, and the
+        // purchase is the part of it a price tracker can't reconstruct later.
+        purchase_price_cad: t.purchase_price_cad ?? '',
+        purchased_at: t.purchased_at ? String(t.purchased_at).slice(0, 10) : '',
+        purchase_dealer: t.purchase_dealer || '',
         best_price: t.best_price ?? '', best_dealer: t.best_dealer || '',
         avg_90d: t.avg_90d ?? '', all_time_low: t.all_time_low ?? '',
         best_url: t.best_url || '', notes: t.notes || '',

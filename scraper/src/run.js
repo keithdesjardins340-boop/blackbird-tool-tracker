@@ -12,6 +12,7 @@ import { getScrapeAdapter } from './adapters/index.js';
 import { randomDelay } from './util/http.js';
 import { closeBrowser } from './util/browser.js';
 import { toCad } from './util/fx.js';
+import { fxStore } from './util/fx-store.js';
 
 function arg(name) {
   const i = process.argv.indexOf(name);
@@ -93,7 +94,10 @@ async function scrapeDealer(dealer) {
       // Normalize to CAD first — everything downstream (anomaly gate, best price,
       // 90-day average) assumes price_cad really is CAD. A non-CAD price we can't
       // convert throws here and is logged as a failure rather than stored wrong.
-      const fx = await toCad(res);
+      // fxStore lets a Valet outage fall back to the last rate we saw (up to a
+      // week old, recorded as such) instead of losing every non-CAD price in the
+      // run. Still fails closed beyond that.
+      const fx = await toCad(res, fxStore);
       const anomaly = (await isAnomaly(listing.id, fx.price_cad))
         || (await isOutlierVsSiblings(listing.id, listing.tool_id, fx.price_cad));
       const { error: sErr } = await supabase.from('price_snapshots').insert({
