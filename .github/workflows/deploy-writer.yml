@@ -32,6 +32,7 @@ jobs:
           version: latest
 
       - name: Deploy the writer
+        id: deploy
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
@@ -47,13 +48,28 @@ jobs:
             --project-ref ssfhjhbarkpgbelnbcun \
             --no-verify-jwt
 
+      # Reports the outcome, not the intention. The first version of this step said
+      # "Deployed from the repo" unconditionally and printed that cheerfully over a
+      # 401 — a summary that lies on failure is worse than no summary, because the
+      # whole point of it is to be the thing you trust at a glance.
       - name: Report
         if: always()
+        shell: bash
+        env:
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
         run: |
           {
             echo "## 🚚 writer deploy"
             echo
-            echo "Commit \`${GITHUB_SHA::12}\` → project \`ssfhjhbarkpgbelnbcun\`, \`verify_jwt=false\`."
-            echo
-            echo "_Deployed from the repo — no hand-copying. Check the function's version in the Supabase dashboard if you want to confirm it moved._"
+            if [ "$DEPLOY_OUTCOME" = "success" ]; then
+              echo "✅ Commit \`${GITHUB_SHA::12}\` deployed to project \`ssfhjhbarkpgbelnbcun\` with \`verify_jwt=false\`."
+              echo
+              echo "_Shipped from the repo — no hand-copying._"
+            else
+              echo "❌ **Deploy failed** (\`$DEPLOY_OUTCOME\`) — the live function is UNCHANGED and still running the previous version."
+              echo
+              echo "A **401** here means \`SUPABASE_ACCESS_TOKEN\` is missing, revoked, or stale:"
+              echo "mint a new token at supabase.com/dashboard/account/tokens and update the"
+              echo "repo secret under Settings → Secrets and variables → Actions."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

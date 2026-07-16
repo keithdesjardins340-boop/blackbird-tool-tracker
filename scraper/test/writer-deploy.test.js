@@ -39,3 +39,13 @@ test('a missing token fails loudly instead of silently skipping', () => {
   assert.match(y, /::error::/);
   assert.match(y, /SUPABASE_ACCESS_TOKEN/);
 });
+
+test('the summary reports the OUTCOME, not the intention', () => {
+  // Shipped broken the first time: the report said "Deployed from the repo"
+  // unconditionally and printed it over a 401. The run page is the thing you
+  // trust at a glance, so a summary that lies on failure is worse than none.
+  const y = yml();
+  assert.match(y, /steps\.deploy\.outcome/, 'the report must read the deploy step outcome');
+  assert.match(y, /Deploy failed/, 'it must be able to say the deploy failed');
+  assert.match(y, /UNCHANGED/, 'and say the live function did not move');
+});
