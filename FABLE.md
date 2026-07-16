@@ -173,11 +173,17 @@ every migration to a throwaway `postgres:16` and assert what the views promise.
 Every trap in §6 has a test that fails if it comes back. Add to them rather than
 around them.
 
-**Open / not done:** overlay focus-trap + Esc, aria polish, copy-best-price-link,
-purchase capture on ✓, ntfy deal alerts, and deploying the writer from CI instead
-of by hand (needs a Supabase access token from him). See `docs/ROADMAP.md`.
+**The roadmap is done except what needs him** (`docs/ROADMAP.md` §5): two repo
+secrets he has to mint — `NTFY_TOPIC` (deal alerts are shipped but inert without
+it) and `SUPABASE_ACCESS_TOKEN` (so the writer stops being hand-copied at deploy)
+— plus the parked paid-coverage items. Snapshot retention isn't due until
+`price_snapshots` passes ~250k rows.
 
-**Recently landed:** the test harness (§7), shared thresholds in
-`web/js/constants.js`, deploy-time `CACHE` stamping, the weekly backup workflow,
-the manual-price staleness guard (0017), the offline write-queue for checkmarks
-(`web/js/queue.js` — `toggle_owned` only), and lazy sparklines.
+**Landed recently:** the test harness (§7); shared thresholds in
+`web/js/constants.js`; deploy-time `CACHE` stamping; the weekly backup workflow;
+the manual-price staleness guard (0017); the offline write-queue
+(`web/js/queue.js` — **`toggle_owned` only**, and that whitelist is load-bearing);
+lazy sparklines; purchase capture on ✓ (0018) with the checklist's money line;
+the FX rate cache (0019 — fail-closed still, just a 7-day window); ntfy alerts
+(0020, `scraper/src/alerts.js`); and the a11y pass (focus-trap, aria,
+copy-best-price-link).

@@ -30,3 +30,9 @@ export const STALE_MANUAL_DAYS = 21;
  * thing worth knowing about the number.
  */
 export const PRICE_AGE_CHIP_DAYS = 7;
+
+/**
+ * How long the tool list has to get before a search box earns its place.
+ * Below this the whole list fits on a screen and a search box is just chrome.
+ */
+export const SEARCH_FROM_TOOLS = 15;

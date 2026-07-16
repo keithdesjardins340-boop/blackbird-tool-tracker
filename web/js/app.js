@@ -1,4 +1,4 @@
-import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js';
+import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS, SEARCH_FROM_TOOLS } from './constants.js';
 
 (function () {
   const view = document.getElementById('view');
@@ -183,7 +183,8 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
       if (f.owned === 'need' && t.owned) return false;
       if (f.priced === 'priced' && t.best_price == null) return false;
       if (f.q) {
-        const hay = `${t.name} ${t.pn || ''} ${t.model_number || ''}`.toLowerCase();
+        // Brand too: he thinks "Fluke", not "Fluke 87V-MAX True RMS…".
+        const hay = `${t.name} ${t.brand || ''} ${t.pn || ''} ${t.model_number || ''}`.toLowerCase();
         if (!hay.includes(f.q.toLowerCase())) return false;
       }
       return true;
@@ -199,8 +200,13 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
     const tiers = [...tierKeys, ...uniq(state.tools.map((t) => t.tier)).filter((v) => v && !tierKeys.includes(v))];
     const opt = (v, sel) => `<option value="${esc(v)}"${v === sel ? ' selected' : ''}>${esc(v || 'All')}</option>`;
     const f = state.filters;
+    // A search box over a list you can see in one glance is chrome. It earns its
+    // place once the list outgrows the screen — or the moment he's typed in it,
+    // otherwise it would vanish mid-search as results narrow past the threshold.
+    const showSearch = state.tools.length > SEARCH_FROM_TOOLS || !!f.q;
     return `<div class="filters">
-      <input type="search" id="fq" placeholder="Search name / SKU…" value="${esc(f.q)}" />
+      ${showSearch ? `<input type="search" id="fq" placeholder="Search name / brand / part #…"
+        aria-label="Search tools" value="${esc(f.q)}" />` : ''}
       <select id="ftier"><option value="">Tier: All</option>${tiers.map((v) => opt(v, f.tier)).join('')}</select>
       <select id="fcat"><option value="">Category: All</option>${cats.map((v) => opt(v, f.category)).join('')}</select>
       <select id="fowned">
@@ -221,6 +227,25 @@ import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js
       if (el) el.addEventListener(ev, () => { state.filters[key] = el.value; render(); });
     };
     bind('fq', 'q', 'input'); bind('ftier', 'tier'); bind('fcat', 'category'); bind('fowned', 'owned'); bind('fpriced', 'priced');
+
+    const q = document.getElementById('fq');
+    if (q) {
+      // Esc clears — the standard reflex for a search box, and faster than
+      // selecting and deleting on a phone.
+      q.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape' || !q.value) return;
+        e.preventDefault();
+        e.stopPropagation(); // don't let it reach an overlay's Esc handler
+        state.filters.q = '';
+        render();
+        document.getElementById('fq')?.focus();
+      });
+      // render() replaces the input, so put the caret back where it was.
+      if (state.filters.q && document.activeElement !== q) {
+        const pos = q.value.length;
+        q.focus(); q.setSelectionRange(pos, pos);
+      }
+    }
   }
 
   // ---- lazy sparklines -------------------------------------------------

@@ -189,10 +189,18 @@ Auto-map / discovery (`ENABLE_AUTO_MAP` stays unset), dealer catalogs, Flipp,
 description matching, Keepa, Zyte/home-proxy for HD/CT/Amazon. The bookmarklet is the
 sanctioned path for blocked dealers.
 
-## 5. The only two pauses (per his rules — they cost money/hardware)
+## 5. Waiting on him — nothing else is
 
-1. **Home residential proxy** for HD auto-refresh (needs an always-on device of his).
-2. **Zyte / Keepa** paid coverage. Everything else in this doc: act, verify, report.
+These are the only items an assistant can't finish. The first two are credentials
+(his to mint; never read or paste one); the last two cost money or hardware.
+
+1. **`NTFY_TOPIC` repo secret** (2.1) — deal alerts are built, tested and shipped
+   dark. They do nothing until the secret exists and he subscribes. README §"Deal
+   alerts on your phone" has the steps.
+2. **`SUPABASE_ACCESS_TOKEN` repo secret** (2.8) — so the writer deploys from CI
+   instead of being hand-copied. Costs nothing.
+3. **Home residential proxy** for HD auto-refresh (needs an always-on device of his).
+4. **Zyte / Keepa** paid coverage. Everything else in this doc: act, verify, report.
 
 ## 6. Suggested order
 
@@ -202,8 +210,12 @@ sanctioned path for blocked dealers.
 | 2 | ✅ 1.7 shared constants · ✅ 2.4 CACHE stamping · ✅ 2.5 weekly backup · ⏸ 2.8 writer deploy (needs his token) |
 | 3 | ✅ 2.2 staleness guard · ✅ 2.7 conversion audit line (was already shipped) |
 | 4 | ✅ 1.1 offline queue · ✅ 1.2 lazy sparklines |
-| 5 | 2.3 purchase capture + progress math |
-| 6 | 2.1 ntfy alerts · 1.3–1.5 a11y + copy-link · §3 as reached |
+| 5 | ✅ 2.3 purchase capture + progress math · ✅ 2.6 FX robustness |
+| 6 | ✅ 2.1 ntfy alerts (needs his secret) · ✅ 1.3–1.5 a11y + copy-link · ✅ 3.1 · ✅ 3.2 |
+
+**Everything that doesn't need him is done.** What's left is his to do — see §5.
+3.3 (snapshot retention) stays parked until `price_snapshots` passes ~250k rows;
+it's at 17.
 
 `STALE_MANUAL_DAYS` already lives in `web/js/constants.js`, so 2.2 has its constant
 waiting.
