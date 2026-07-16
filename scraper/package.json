@@ -10,12 +10,17 @@
     "scrape:dealer": "node src/run.js --dealer",
     "link-finder": "node src/link-finder.js",
     "auto-map": "node src/auto-map.js",
-    "import-csv": "node src/import-csv.js"
+    "import-csv": "node src/import-csv.js",
+    "test": "node --test test/*.test.js",
+    "test:db": "node --test test/db/*.test.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
     "cheerio": "^1.0.0",
     "csv-parse": "^5.5.6",
     "playwright": "^1.47.0"
+  },
+  "devDependencies": {
+    "pg": "^8.13.0"
   }
 }

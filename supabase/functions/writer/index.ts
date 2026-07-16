@@ -11,6 +11,7 @@
 // Edge runtime; the writer token lives in app_secrets (rotate it there to revoke).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { decideAttach } from "./attach.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -176,16 +177,17 @@ async function toCad(price: number, regular: number | null, currency: unknown) {
 // lives in exactly one place: revive it if it's this tool's and was removed, and
 // NEVER move it off another tool. Shared by every op that adds a link, so they
 // all behave the same instead of some throwing a raw duplicate-key error.
+// The decision itself lives in ./attach.js — pure, and covered by tests.
 // deno-lint-ignore no-explicit-any
 async function attachListing(admin: any, toolId: number, dealerId: number, url: string, source = "manual") {
   const { data: existing } = await admin.from("tool_listings")
     .select("id,tool_id,active").eq("dealer_id", dealerId).eq("product_url", url).maybeSingle();
-  if (existing) {
-    if (String(existing.tool_id) !== String(toolId)) return { state: "conflict", id: existing.id };
-    if (existing.active) return { state: "already", id: existing.id };
-    const { error } = await admin.from("tool_listings").update({ active: true }).eq("id", existing.id);
+  const d = decideAttach(existing, toolId);
+  if (d.state === "conflict" || d.state === "already") return d;
+  if (d.state === "revived") {
+    const { error } = await admin.from("tool_listings").update({ active: true }).eq("id", d.id);
     if (error) throw error;
-    return { state: "revived", id: existing.id };
+    return d;
   }
   const { data: created, error } = await admin.from("tool_listings")
     .insert({ tool_id: toolId, dealer_id: dealerId, product_url: url, active: true, source })

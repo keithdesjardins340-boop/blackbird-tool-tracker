@@ -1,0 +1,49 @@
+<!doctype html>
+<!--
+  Reduced copy of the myflukestore.ca 87V Max product page shape that caused the
+  add-on bug (FABLE.md §6): a $135 warranty upsell sits ABOVE the real price in
+  the DOM, and the page exposes NO JSON-LD and NO price meta tag — so the
+  generic adapter falls through to the markup scan and a naive first-match reads
+  the warranty. The real price is $725.67, in <h2 class="productpage-price">.
+
+  Kept deliberately small: only the elements that matter to the extraction order
+  (no JSON-LD, no meta price, an excluded section, the real price, stock words).
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Fluke 87V MAX True RMS Digital Multimeter | My Fluke Store</title>
+  <meta property="og:title" content="Fluke 87V MAX True RMS Digital Multimeter">
+  <!-- No og:price / product:price:amount — this page never had one. -->
+</head>
+<body>
+  <main>
+    <h1>Fluke 87V MAX True-RMS Digital Multimeter</h1>
+
+    <!-- The trap: an opt-in add-on, cheaper than the product, rendered first. -->
+    <div class="incentives-wrapper">
+      <div class="incentives-item">
+        <label>
+          <input type="checkbox" name="addon_warranty">
+          Add 3-Year Extended Warranty &amp; Calibration
+        </label>
+        <span class="incentives-price price">$135.00</span>
+      </div>
+    </div>
+
+    <div class="productpage-purchase">
+      <h2 class="productpage-price">$725.67</h2>
+      <p class="productpage-availability">In Stock — ships same day</p>
+      <button type="submit" class="btn-cart">Add to Cart</button>
+    </div>
+
+    <section class="related-products">
+      <h3>Customers also bought</h3>
+      <div class="related-item">
+        <span class="related-price price">$89.99</span>
+        <span>Fluke TL175 TwistGuard Test Leads</span>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

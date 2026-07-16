@@ -1,0 +1,36 @@
+<!doctype html>
+<!--
+  Reduced copy of the fluke.com (US) 87V Max page shape. The point of this one is
+  the currency: a plain "$635.99" that is NOT Canadian. JSON-LD declares
+  priceCurrency "USD", and the adapter must carry that through so run.js converts
+  it — storing 635.99 in price_cad is the ~40% error from FABLE.md §6, and it made
+  the most expensive dealer look like the cheapest.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Fluke 87V MAX True-RMS Digital Multimeter</title>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "name": "Fluke 87V MAX True-RMS Digital Multimeter",
+    "brand": { "@type": "Brand", "name": "Fluke" },
+    "mpn": "FLUKE-87V/MAX",
+    "offers": {
+      "@type": "Offer",
+      "price": "635.99",
+      "priceCurrency": "USD",
+      "availability": "https://schema.org/InStock"
+    }
+  }
+  </script>
+</head>
+<body>
+  <main>
+    <h1>Fluke 87V MAX True-RMS Digital Multimeter</h1>
+    <div class="price">$635.99</div>
+    <button>Add to Cart</button>
+  </main>
+</body>
+</html>

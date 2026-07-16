@@ -42,33 +42,43 @@ function priceFromMarkup($) {
   return found;
 }
 
+/**
+ * Read a price out of an already-loaded page. Split from scrape() so the
+ * extraction order (JSON-LD → meta → markup) and the add-on skipping can be
+ * tested against a saved fixture — the myflukestore $135-warranty bug is a
+ * pure parsing bug, and needs no network to catch.
+ * `where` is only used for the error message.
+ */
+export function extractManualPrice($, where = 'manual link') {
+  const product = findJsonLdProduct($);
+  const ld = offerFromProduct(product);
+  let price = ld?.price ?? null;
+  let in_stock = ld?.in_stock ?? null;
+  let parse_via = price != null ? 'json-ld' : null;
+  // A pasted link can point anywhere, including US sites — so whatever the page
+  // declares its currency to be, carry it through and let run.js convert to CAD.
+  let currency = ld?.currency ?? null;
+
+  if (price == null) { const m = metaPrice($); if (m != null) { price = m; parse_via = 'meta'; } }
+  if (price == null) { const k = priceFromMarkup($); if (k != null) { price = k; parse_via = 'markup'; } }
+  if (price == null) throw new Error(`price not found (${where})`);
+  if (!currency) currency = metaCurrency($);
+
+  if (in_stock == null) {
+    const txt = ($('main').text() || $('body').text()).toLowerCase();
+    if (/out of stock|sold out|unavailable|discontinued|back ?order/.test(txt)) in_stock = false;
+    else if (/add to cart|in stock|available|buy now/.test(txt)) in_stock = true;
+  }
+  return result({ price, in_stock, parse_via, currency, mpn: mpnFromProduct(product) });
+}
+
 const genericManual = {
   dealer: 'Other',
   needsJs: false,
 
   async scrape(productUrl) {
     const $ = await makeLoader({ needsJs: false })(productUrl);
-
-    const product = findJsonLdProduct($);
-    const ld = offerFromProduct(product);
-    let price = ld?.price ?? null;
-    let in_stock = ld?.in_stock ?? null;
-    let parse_via = price != null ? 'json-ld' : null;
-    // A pasted link can point anywhere, including US sites — so whatever the page
-    // declares its currency to be, carry it through and let run.js convert to CAD.
-    let currency = ld?.currency ?? null;
-
-    if (price == null) { const m = metaPrice($); if (m != null) { price = m; parse_via = 'meta'; } }
-    if (price == null) { const k = priceFromMarkup($); if (k != null) { price = k; parse_via = 'markup'; } }
-    if (price == null) throw new Error(`price not found (manual link) ${productUrl}`);
-    if (!currency) currency = metaCurrency($);
-
-    if (in_stock == null) {
-      const txt = ($('main').text() || $('body').text()).toLowerCase();
-      if (/out of stock|sold out|unavailable|discontinued|back ?order/.test(txt)) in_stock = false;
-      else if (/add to cart|in stock|available|buy now/.test(txt)) in_stock = true;
-    }
-    return result({ price, in_stock, parse_via, currency, mpn: mpnFromProduct(product) });
+    return extractManualPrice($, productUrl);
   },
 };
 

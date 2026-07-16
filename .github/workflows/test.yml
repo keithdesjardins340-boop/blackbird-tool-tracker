@@ -1,0 +1,59 @@
+name: Tests
+
+# The owner has no Node locally, so CI is the only place these can run — which
+# makes this workflow the project's actual safety net. It reads no secrets and
+# touches no live data: the unit layer runs against saved fixtures, and the DB
+# layer against a throwaway Postgres created for the job.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: scraper
+
+    services:
+      # Same major version as Supabase, so the views under test run on the
+      # planner they'll actually meet in production.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: blackbird_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22' # node:test + native fetch; no test framework needed
+
+      # Playwright's npm package is a dependency of the scraper, but the tests
+      # never render a page — so no browser download here (that's ~2 min saved).
+      - name: Install dependencies
+        run: npm install
+
+      # Fixtures + pure functions: parsePrice, the generic adapter's add-on
+      # skipping, normalizeUrl, and the fail-closed currency path.
+      - name: Unit tests
+        run: npm test
+
+      # Applies every migration to an empty database (which alone catches broken
+      # SQL), then checks what the views promise the dashboard.
+      - name: DB tests
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/blackbird_test
+        run: npm run test:db
