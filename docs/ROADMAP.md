@@ -195,11 +195,14 @@ sanctioned path for blocked dealers.
 | Session | Items |
 |---|---|
 | 1 | ✅ 1.6 test harness + fixtures (locks the traps in before touching anything else) |
-| 2 | 1.7 shared constants · 2.4 CACHE stamping · 2.5 weekly backup · 2.8 writer deploy |
+| 2 | ✅ 1.7 shared constants · ✅ 2.4 CACHE stamping · ✅ 2.5 weekly backup · ⏸ 2.8 writer deploy (needs his token) |
 | 3 | 2.2 staleness guard · 2.7 conversion audit line |
 | 4 | 1.1 offline queue · 1.2 lazy sparklines |
 | 5 | 2.3 purchase capture + progress math |
 | 6 | 2.1 ntfy alerts · 1.3–1.5 a11y + copy-link · §3 as reached |
+
+`STALE_MANUAL_DAYS` already lives in `web/js/constants.js`, so 2.2 has its constant
+waiting.
 
 ## 7. Guardrails — current, binding
 
