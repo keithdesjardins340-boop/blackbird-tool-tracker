@@ -117,6 +117,25 @@ Then rebuild the list from the app's quick-add (tool + pasted links). Note: the
 Deals tab's "all-time low" reads are noisy for the first couple of weeks after a
 wipe while price history rebuilds, then settle.
 
+## Backups
+
+The **Weekly backup** workflow runs every Monday and dumps the whole database
+(`tools`, `tool_listings`, `price_snapshots`, `map_candidates`, `dealers`) to JSON,
+uploaded as a GitHub Actions **artifact** with 90-day retention. It never lands in
+the repo — this repo is public and the dump is your entire list. The writer token
+(`app_secrets`) is deliberately **not** in the dump. You can also run it any time:
+Actions → Weekly backup → Run workflow.
+
+**To restore:** download the artifact from the run (Actions → Weekly backup → the
+run → Artifacts), then in the Supabase SQL editor insert the rows back in this
+order — `dealers`, `tools`, `tool_listings`, `price_snapshots` — because each
+depends on the one before it. The JSON keeps the original `id`s, so the simplest
+path is to load each array into a temp table and `insert … select`, then re-run
+`select setval(pg_get_serial_sequence('tools','id'), (select max(id) from tools))`
+(and the same for the other three) so new rows don't collide with restored ids.
+The same file shape is used by `backups/blackbird-FULL-BACKUP-pre-wipe.json`, so
+this works for that one too.
+
 ## Local dev on this machine (no Node.js)
 
 - **Dashboard**: `web/serve.ps1` serves it on http://localhost:8125 — no build.

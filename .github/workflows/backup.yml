@@ -1,0 +1,50 @@
+name: Weekly backup
+
+# His tool list is hand-built and is the one thing here that can't be
+# regenerated. The only backup that existed was taken by hand, once. This keeps
+# a recent one without anyone remembering to.
+#
+# The dump goes to an Actions ARTIFACT, never into the repo: this repo is public,
+# and the backup contains his whole list. Artifacts are private to the repo's
+# collaborators and expire on their own.
+
+on:
+  schedule:
+    - cron: '0 9 * * 1' # Mondays 09:00 UTC (~03:00/04:00 Winnipeg — off the scrape times)
+  workflow_dispatch:
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: scraper
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Dump the database
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node src/backup.js "blackbird-backup-$(date -u +%Y-%m-%d).json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: blackbird-backup-${{ github.run_id }}
+          path: scraper/blackbird-backup-*.json
+          retention-days: 90
+          if-no-files-found: error # never let a missing dump pass as a successful backup
