@@ -17,5 +17,16 @@ export const DEAL_PCT = -10;
  * How stale a MANUAL (bookmarklet-captured) price may be and still win BEST.
  * Scraped prices refresh twice a day; captured ones only when he sweeps, so an
  * old capture can otherwise hold the BEST tag against fresh scraped prices.
+ *
+ * `tool_market_status` enforces this too, and SQL can't import a JS constant —
+ * so migration 0017 hardcodes the same number and a DB test asserts the two
+ * still agree. Change it here and the test will tell you to change the view.
  */
 export const STALE_MANUAL_DAYS = 21;
+
+/**
+ * How old a displayed price has to be before we put its age on screen. Under
+ * this, the age is noise (everything is a day old); over it, it's the first
+ * thing worth knowing about the number.
+ */
+export const PRICE_AGE_CHIP_DAYS = 7;

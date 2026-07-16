@@ -1,4 +1,4 @@
-import { DEAL_PCT } from './constants.js';
+import { DEAL_PCT, STALE_MANUAL_DAYS, PRICE_AGE_CHIP_DAYS } from './constants.js';
 
 (function () {
   const view = document.getElementById('view');
@@ -236,8 +236,10 @@ import { DEAL_PCT } from './constants.js';
       delta = `<span class="delta ${cls}">${sign}${p}% <span class="muted">vs 90d</span></span>`;
     }
 
+    // The age rides with the price, not in the badge row: it qualifies THIS
+    // number, and reading "$725.67" without "18 d" next to it is the whole problem.
     const priceBlock = t.best_price != null
-      ? `<div class="amount">${money(t.best_price)}</div><div class="dealer">${esc(t.best_dealer || '')}</div>`
+      ? `<div class="amount">${money(t.best_price)}</div><div class="dealer">${esc(t.best_dealer || '')}${ageChip(t.best_scraped_at)}</div>`
       : `<div class="na">No price yet</div>`;
 
     return `<div class="card" data-tool="${t.tool_id}">
@@ -270,7 +272,7 @@ import { DEAL_PCT } from './constants.js';
     if (t.at_or_below_target) badges.push('<span class="badge target">≤ target</span>');
     if (t.best_source === 'auto-desc') badges.push('<span class="verify-tag">≈ verify</span>');
     const price = priced
-      ? `<div class="cr-price"><span class="amount">${money(t.best_price)}</span><span class="cr-dealer">${esc(t.best_dealer || '')}</span></div>`
+      ? `<div class="cr-price"><span class="amount">${money(t.best_price)}</span><span class="cr-dealer">${esc(t.best_dealer || '')}${ageChip(t.best_scraped_at)}</span></div>`
       : `<div class="cr-price na">—</div>`;
     const qty = t.quantity && t.quantity > 1 ? `<span class="cr-qty">×${t.quantity}</span>` : '';
     const sub = esc(t.pn || t.model_number || '');
@@ -542,6 +544,37 @@ import { DEAL_PCT } from './constants.js';
     return ` · <span class="fx-note">converted from ${orig}${rate}</span>`;
   }
 
+  // ---- how old is this price? ------------------------------------------
+  // Every price on screen is a claim about what something costs right now. Most
+  // are hours old and the age is noise; past a week it's the first thing worth
+  // knowing, so it goes on screen.
+  const ageInDays = (iso) => {
+    if (!iso) return null;
+    const t = Date.parse(iso);
+    return Number.isFinite(t) ? (Date.now() - t) / 86400000 : null;
+  };
+
+  // A hand-captured price only refreshes when he sweeps it with the bookmarklet,
+  // so past STALE_MANUAL_DAYS we stop letting it win BEST. tool_market_status
+  // enforces the same rule server-side — this mirrors it so the detail overlay
+  // and the cards can't disagree about which dealer is best.
+  const isStaleManual = (s) =>
+    !!s && s.parse_via === 'manual-capture' && (ageInDays(s.scraped_at) ?? 0) > STALE_MANUAL_DAYS;
+
+  /** Quiet age chip for a price older than a week: "12 d". */
+  function ageChip(iso) {
+    const d = ageInDays(iso);
+    if (d == null || d < PRICE_AGE_CHIP_DAYS) return '';
+    return ` <span class="badge age" title="Last refreshed ${fmtDate(iso)}">${Math.round(d)} d</span>`;
+  }
+
+  /** A captured price too old to trust: say so, and offer the way to fix it. */
+  function staleChip(s, productUrl) {
+    if (!isStaleManual(s)) return '';
+    return ` <a class="badge stale" href="${esc(productUrl || '#')}" target="_blank" rel="noopener"
+      title="Captured by hand ${fmtDate(s.scraped_at)} and not refreshed since, so it can't win BEST. Open the page and run the bookmarklet to recapture.">stale — recapture ↗</a>`;
+  }
+
   // ---- detail overlay --------------------------------------------------
   const detail = document.getElementById('detail');
   const detailBody = document.getElementById('detailBody');
@@ -560,7 +593,7 @@ import { DEAL_PCT } from './constants.js';
       let snaps = [];
       if (ids.length) {
         snaps = await SB.select('price_snapshots',
-          `select=listing_id,price_cad,regular_price_cad,on_sale,in_stock,scraped_at,currency,price_original,fx_rate,is_anomaly&listing_id=in.(${ids.join(',')})&order=scraped_at.asc`) || [];
+          `select=listing_id,price_cad,regular_price_cad,on_sale,in_stock,scraped_at,currency,price_original,fx_rate,is_anomaly,parse_via&listing_id=in.(${ids.join(',')})&order=scraped_at.asc`) || [];
       }
       const byListing = {};
       for (const s of snaps) (byListing[s.listing_id] ||= []).push(s);
@@ -627,19 +660,29 @@ import { DEAL_PCT } from './constants.js';
 
       // One row per dealer, cheapest first; the lowest in-stock price is BEST —
       // this is the single "one deal per tool" the user buys from.
+      //
+      // This MUST pick the same winner as tool_market_status, or the card and
+      // this overlay tag different dealers BEST for the same tool. So it applies
+      // the view's rule exactly: skip prices we can't stand behind (a stale hand
+      // capture), then in-stock first, then cheapest.
       const rows = live.map((l) => {
         const last = (byListing[l.id] || []).slice(-1)[0];
-        return { l, price: last ? Number(last.price_cad) : null, last };
+        return { l, price: last ? Number(last.price_cad) : null, last, stale: isStaleManual(last) };
       });
       rows.sort((a, b) => (a.price == null) - (b.price == null) || (a.price ?? 0) - (b.price ?? 0));
-      const bestId = rows.find((r) => r.price != null)?.l.id ?? null;
+      const eligible = rows.filter((r) => r.price != null && !r.stale);
+      // in_stock null means "the page didn't say" — treated as in stock, same as
+      // the view's coalesce(in_stock, true).
+      const inStockFirst = [...eligible].sort((a, b) =>
+        (a.last?.in_stock === false) - (b.last?.in_stock === false) || a.price - b.price);
+      const bestId = inStockFirst[0]?.l.id ?? null;
 
       const dealerRows = rows.map(({ l, last }) => {
         const oos = last && last.in_stock === false;
         return `<div class="dealer-row${l.id === bestId ? ' best' : ''}">
           <div>
             <b>${esc(l.dealer?.name || '')}</b>${l.id === bestId ? ' <span class="best-tag">BEST</span>' : ''}${l.source === 'auto-desc' ? ' <span class="verify-tag" title="Auto-matched by description — open it to confirm it\'s the right product">≈ verify</span>' : ''}${oos ? ' <span class="badge oos">OOS</span>' : ''}
-            <div class="tool-sub">${last ? money(last.price_cad) + ' · ' + fmtDate(last.scraped_at) + fxNote(last) : 'no price yet — will scrape next run'}</div>
+            <div class="tool-sub">${last ? money(last.price_cad) + ' · ' + fmtDate(last.scraped_at) + ageChip(last.scraped_at) + staleChip(last, l.product_url) + fxNote(last) : 'no price yet — will scrape next run'}</div>
           </div>
           <div class="dealer-actions">
             <a href="${esc(l.product_url)}" target="_blank" rel="noopener">Open ↗</a>

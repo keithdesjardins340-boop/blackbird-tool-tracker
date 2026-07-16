@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 import pg from 'pg';
 import { applyMigrations } from './apply-migrations.js';
 import { decideAttach } from '../../../supabase/functions/writer/attach.js';
+import { STALE_MANUAL_DAYS } from '../../../web/js/constants.js';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
@@ -56,16 +57,22 @@ const seedListing = async (toolId, dealerId, url, active = true) =>
     [toolId, dealerId, url, active, 'manual'],
   )).id;
 
-/** A price snapshot `hoursAgo` in the past. */
-const snap = async (listingId, price, { anomaly = false, hoursAgo = 0, inStock = true } = {}) =>
+/** A price snapshot `hoursAgo` in the past. `via` mirrors parse_via
+ *  ('manual-capture' = read from his own browser with the bookmarklet). */
+const snap = async (listingId, price, { anomaly = false, hoursAgo = 0, inStock = true, via = 'json-ld' } = {}) =>
   (await one(
-    `insert into price_snapshots (listing_id, price_cad, is_anomaly, in_stock, scraped_at)
-     values ($1, $2, $3, $4, now() - make_interval(hours => $5::int)) returning id`,
-    [listingId, price, anomaly, inStock, hoursAgo],
+    `insert into price_snapshots (listing_id, price_cad, is_anomaly, in_stock, scraped_at, parse_via)
+     values ($1, $2, $3, $4, now() - make_interval(hours => $5::int), $6) returning id`,
+    [listingId, price, anomaly, inStock, hoursAgo, via],
   )).id;
+const days = (n) => n * 24;
 
 const marketStatus = (toolId) =>
   one('select * from tool_market_status where tool_id = $1', [toolId]);
+
+/** The view's own SQL, as Postgres stores it — for asserting on the rule itself. */
+const defOf = async (view) =>
+  (await one('select pg_get_viewdef($1::regclass, true) as def', [view])).def;
 
 // ---- the migrations themselves --------------------------------------------
 
@@ -252,6 +259,86 @@ test('a tool with no priced link still appears, with nulls', async () => {
   assert.equal(s.best_price, null);
   assert.equal(s.at_all_time_low, false);
   assert.equal(s.at_or_below_target, false);
+});
+
+// ---- stale hand-captured prices can't hold BEST ----------------------------
+
+test('the view ages manual prices out at exactly STALE_MANUAL_DAYS', async () => {
+  // SQL can't import a JS constant, so 0017 hardcodes the number. This is the
+  // seam: if someone changes STALE_MANUAL_DAYS and not the view (or vice versa),
+  // the dashboard and the database start disagreeing about which dealer is best
+  // — silently, and only for stale rows. Fail here instead.
+  const def = await defOf('tool_market_status');
+  assert.match(
+    def,
+    new RegExp(`'${STALE_MANUAL_DAYS}\\s*days?'`),
+    `tool_market_status must age manual prices out at STALE_MANUAL_DAYS (${STALE_MANUAL_DAYS} days)`,
+  );
+});
+
+test('a stale hand-capture loses BEST to a fresher, dearer scraped price', async () => {
+  // The point of the whole item. A 30-day-old $499 capture must not beat a
+  // scraped $520 from this morning — it's a price we can't stand behind.
+  const tool = await seedTool('87V Max (stale capture)');
+  const ct = await seedDealer('Test Canadian Tire');
+  const kms = await seedDealer('Test KMS fresh');
+  const captured = await seedListing(tool, ct, 'https://ct.example/87v');
+  const scraped = await seedListing(tool, kms, 'https://kms.example/87v-fresh');
+  await snap(captured, 499.00, { hoursAgo: days(30), via: 'manual-capture' });
+  await snap(scraped, 520.00, { hoursAgo: 2 });
+
+  const s = await marketStatus(tool);
+  assert.equal(Number(s.best_price), 520.00, 'the fresh scraped price should win');
+  assert.equal(s.best_dealer, 'Test KMS fresh');
+  assert.equal(Number(s.best_dealer_id), Number(kms));
+});
+
+test('a RECENT hand-capture still wins — this ages prices out, it does not distrust captures', async () => {
+  const tool = await seedTool('87V Max (fresh capture)');
+  const ct = await seedDealer('Test CT fresh capture');
+  const kms = await seedDealer('Test KMS dearer');
+  const captured = await seedListing(tool, ct, 'https://ct.example/87v-fresh');
+  const scraped = await seedListing(tool, kms, 'https://kms.example/87v-dearer');
+  await snap(captured, 499.00, { hoursAgo: days(3), via: 'manual-capture' });
+  await snap(scraped, 520.00, { hoursAgo: 2 });
+
+  const s = await marketStatus(tool);
+  assert.equal(Number(s.best_price), 499.00);
+  assert.equal(s.best_dealer, 'Test CT fresh capture');
+});
+
+test('an OLD SCRAPED price is not aged out — that is the scraper failing, not a stale capture', async () => {
+  // Deliberate: a 30-day-old scraped price means the link is dead or blocked,
+  // which the run report's "unpriced links" already surfaces. Hiding it here
+  // would mask that, and leave him with no price at all.
+  const tool = await seedTool('87V Max (old scrape)');
+  const d = await seedDealer('Test stalled dealer');
+  const l = await seedListing(tool, d, 'https://stalled.example/87v');
+  await snap(l, 499.00, { hoursAgo: days(30), via: 'json-ld' });
+
+  const s = await marketStatus(tool);
+  assert.equal(Number(s.best_price), 499.00, 'an old scraped price still shows');
+});
+
+test('a stale capture is the ONLY price: the tool shows no price rather than a bad one', async () => {
+  // Honest failure. "No price" sends him to look; a confident three-week-old
+  // number sends him to the store.
+  const tool = await seedTool('87V Max (only stale)');
+  const ct = await seedDealer('Test CT only');
+  const l = await seedListing(tool, ct, 'https://ct.example/87v-only');
+  await snap(l, 499.00, { hoursAgo: days(40), via: 'manual-capture' });
+
+  const s = await marketStatus(tool);
+  assert.ok(s, 'the tool itself must still be listed');
+  assert.equal(s.best_price, null);
+  // and the listing is still there to be recaptured — not deleted, not hidden
+  const still = await one('select active from tool_listings where tool_id = $1', [tool]);
+  assert.equal(still.active, true);
+});
+
+test('listing_latest_price exposes parse_via, so the dashboard can mirror the rule', async () => {
+  const def = await defOf('listing_latest_price');
+  assert.ok(def.includes('parse_via'), 'the detail overlay needs parse_via to agree with the view');
 });
 
 // ---- the attachListing() contract, against the real constraint --------------

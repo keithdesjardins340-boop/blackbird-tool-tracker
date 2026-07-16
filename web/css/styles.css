@@ -141,6 +141,14 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 16px 14px 48px; }
 .badge.sale { color: var(--good-ink); border-color: var(--good-ink); }
 .badge.target { color: var(--good-ink); border-color: var(--good-ink); }
 .badge.oos { color: var(--crit); background: var(--card-2); border-color: var(--line); }
+/* Age chip ("12 d"): deliberately colourless. It qualifies a price rather than
+   judging it — a week-old price isn't bad news, it's just a fact worth seeing. */
+.badge.age { font-weight: 600; }
+/* Stale hand-capture: this one IS a status (we can't stand behind the number,
+   and it's been dropped from BEST), so it takes the warn step — beside its own
+   words, never colour alone. It's a link: tapping opens the page to recapture. */
+.badge.stale { color: var(--warn-ink); border-color: var(--warn-ink); text-decoration: none; }
+.badge.stale:hover { background: var(--card-2); }
 
 .delta { font-weight: 700; font-size: 13px; color: var(--muted); }
 .delta.up { color: var(--crit); }        /* price went up — bad for a buyer */
