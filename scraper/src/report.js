@@ -4,6 +4,7 @@
 // Read-only.
 
 import { supabase } from './supabase.js';
+import { fetchAll } from './util/page.js';
 // Same file the dashboard imports — the report and the Deals tab must agree on
 // what a deal IS, or one of them is lying to him.
 import { DEAL_PCT } from '../../web/js/constants.js';
@@ -27,19 +28,25 @@ async function main() {
   // Unpriced links: active listings with NO fresh snapshot in the window — i.e. a
   // dead or blocked pasted link. In manual-first this is the key signal (a bad
   // link should be visible now, not discovered at buy time).
-  const { data: activeListings } = await supabase
+  // Paged: a full list is ~295 tools with several dealer links each, which is
+  // over the API's 1000-row cap. Truncated, this would silently UNDER-report
+  // dead links — and "which of my links stopped pricing" is the whole point of
+  // this section under manual-first.
+  const activeListings = await fetchAll(() => supabase
     .from('tool_listings')
     .select('id, tool:tools(name), dealer:dealers(name)')
-    .eq('active', true);
+    .eq('active', true)
+    .order('id'));
   // listing_latest_price is ONE row per listing, so this can't outgrow the Data
   // API's silent 1000-row cap the way `select listing_id from price_snapshots`
   // did — that pulled every snapshot in the window (2 per listing per day) and
   // would have started inventing "unpriced links" out of truncation once the
   // list got big. A report that cries wolf is worse than no report.
-  const { data: latest } = await supabase
-    .from('listing_latest_price').select('listing_id, scraped_at').gte('scraped_at', since);
-  const fresh = new Set((latest || []).map((s) => s.listing_id));
-  const unpriced = (activeListings || []).filter((l) => !fresh.has(l.id));
+  const latest = await fetchAll(() => supabase
+    .from('listing_latest_price').select('listing_id, scraped_at')
+    .gte('scraped_at', since).order('listing_id'));
+  const fresh = new Set(latest.map((s) => s.listing_id));
+  const unpriced = activeListings.filter((l) => !fresh.has(l.id));
 
   const L = [];
   L.push('## 🛠️ Blackbird scrape run', '');

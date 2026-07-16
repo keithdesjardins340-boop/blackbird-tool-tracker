@@ -18,25 +18,17 @@
 
 import { writeFileSync } from 'node:fs';
 import { supabase } from './supabase.js';
+import { fetchAll } from './util/page.js';
 
-// PostgREST caps a response at 1000 rows. Paging is not optional: without it a
-// backup silently truncates at row 1000 and looks perfectly healthy — you'd
-// find out while restoring, which is the worst possible moment.
-const PAGE = 1000;
-
+// Paging is not optional here: the API silently caps responses at 1000 rows, so
+// without it a backup truncates and still looks perfectly healthy — you'd find
+// out while restoring, which is the worst possible moment.
 async function dumpAll(table) {
-  const rows = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
-      .from(table)
-      .select('*')
-      .order('id', { ascending: true })
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error(`${table}: ${error.message}`);
-    rows.push(...(data || []));
-    if (!data || data.length < PAGE) break; // short page = last page
+  try {
+    return await fetchAll(() => supabase.from(table).select('*').order('id', { ascending: true }));
+  } catch (e) {
+    throw new Error(`${table}: ${e.message}`);
   }
-  return rows;
 }
 
 async function main() {
