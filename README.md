@@ -117,6 +117,31 @@ Then rebuild the list from the app's quick-add (tool + pasted links). Note: the
 Deals tab's "all-time low" reads are noisy for the first couple of weeks after a
 wipe while price history rebuilds, then settle.
 
+## Deal alerts on your phone (optional, free)
+
+The tracker's job is *buy at the right time*, and that signal is no use sitting in
+a tab. After each scrape it can push a notification when a tool you still need
+hits **at or under your target price**, or drops **10% or more below its 90-day
+average** — plus one if the scrape itself fails (a silently broken scraper leaves
+the app showing stale prices with confidence).
+
+It uses [ntfy.sh](https://ntfy.sh): free, no account. The **topic** is both the
+address and the only secret — anyone who knows it can read your alerts — so treat
+it like a password. It is never printed in the logs.
+
+**To turn it on:**
+
+1. Pick a topic nobody could guess, e.g. `bbt-` plus ~24 random hex characters.
+2. GitHub → repo **Settings → Secrets and variables → Actions → New repository
+   secret**, named `NTFY_TOPIC`, with that value.
+3. Install the ntfy app (iOS/Android) or open `https://ntfy.sh/<your-topic>` in a
+   browser, and **subscribe to the same topic**.
+
+Until the secret exists the alert step does nothing at all, so the scrape is
+unaffected either way. Alerts are deduplicated: the same tool is only re-announced
+if its price drops a further ≥2%, or 14 days pass — an alert you learn to swipe
+away is worse than no alert.
+
 ## Backups
 
 The **Weekly backup** workflow runs every Monday and dumps the whole database

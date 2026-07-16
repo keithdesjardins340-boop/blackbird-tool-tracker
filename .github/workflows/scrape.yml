@@ -57,6 +57,7 @@ jobs:
         run: node src/auto-map.js
 
       - name: Run scrapers
+        id: scrape
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -65,6 +66,25 @@ jobs:
             node src/run.js --dealer "${{ github.event.inputs.dealer }}"
           else
             node src/run.js
+          fi
+
+      # Push the buy signal to his phone (ntfy.sh — free, no account). The topic
+      # is the only secret; unset → alerts.js exits quietly, so this step is inert
+      # until he subscribes. `always()` so a failed run can say so itself: a
+      # scraper that dies silently leaves the app showing stale prices with
+      # confidence, which is the failure worth being told about.
+      - name: Push alerts
+        if: always()
+        continue-on-error: true # a missed notification must never fail the run
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          if [ "${{ steps.scrape.outcome }}" = "success" ]; then
+            node src/alerts.js
+          else
+            node src/alerts.js --run-failed
           fi
 
       # Always summarize the run (dealer health, snapshot volume, anomalies, deals)
