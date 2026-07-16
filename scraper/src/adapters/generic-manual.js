@@ -6,7 +6,7 @@
 //
 // No search()/autoMap — manual links are seeded by the user, not discovered.
 
-import { makeLoader, parsePrice, findJsonLdProduct, offerFromProduct, metaPrice, result, mpnFromProduct } from './base.js';
+import { makeLoader, parsePrice, findJsonLdProduct, offerFromProduct, metaPrice, metaCurrency, result, mpnFromProduct } from './base.js';
 
 const CURRENCY_RE = /\$\s?([\d]{1,3}(?:,\d{3})*(?:\.\d{2})|\d+\.\d{2})/;
 
@@ -37,17 +37,21 @@ const genericManual = {
     let price = ld?.price ?? null;
     let in_stock = ld?.in_stock ?? null;
     let parse_via = price != null ? 'json-ld' : null;
+    // A pasted link can point anywhere, including US sites — so whatever the page
+    // declares its currency to be, carry it through and let run.js convert to CAD.
+    let currency = ld?.currency ?? null;
 
     if (price == null) { const m = metaPrice($); if (m != null) { price = m; parse_via = 'meta'; } }
     if (price == null) { const k = priceFromMarkup($); if (k != null) { price = k; parse_via = 'markup'; } }
     if (price == null) throw new Error(`price not found (manual link) ${productUrl}`);
+    if (!currency) currency = metaCurrency($);
 
     if (in_stock == null) {
       const txt = ($('main').text() || $('body').text()).toLowerCase();
       if (/out of stock|sold out|unavailable|discontinued|back ?order/.test(txt)) in_stock = false;
       else if (/add to cart|in stock|available|buy now/.test(txt)) in_stock = true;
     }
-    return result({ price, in_stock, parse_via, mpn: mpnFromProduct(product) });
+    return result({ price, in_stock, parse_via, currency, mpn: mpnFromProduct(product) });
   },
 };
 

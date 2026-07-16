@@ -11,6 +11,7 @@ import { supabase } from './supabase.js';
 import { getScrapeAdapter } from './adapters/index.js';
 import { randomDelay } from './util/http.js';
 import { closeBrowser } from './util/browser.js';
+import { toCad } from './util/fx.js';
 
 function arg(name) {
   const i = process.argv.indexOf(name);
@@ -65,15 +66,22 @@ async function scrapeDealer(dealer) {
   for (const listing of listings || []) {
     try {
       const res = await adapter.scrape(listing.product_url);
-      const anomaly = await isAnomaly(listing.id, res.price);
+      // Normalize to CAD first — everything downstream (anomaly gate, best price,
+      // 90-day average) assumes price_cad really is CAD. A non-CAD price we can't
+      // convert throws here and is logged as a failure rather than stored wrong.
+      const fx = await toCad(res);
+      const anomaly = await isAnomaly(listing.id, fx.price_cad);
       const { error: sErr } = await supabase.from('price_snapshots').insert({
         listing_id: listing.id,
-        price_cad: res.price,
-        regular_price_cad: res.regular_price,
+        price_cad: fx.price_cad,
+        regular_price_cad: fx.regular_price_cad,
         on_sale: res.on_sale,
         in_stock: res.in_stock,
         is_anomaly: anomaly,
         parse_via: res.parse_via ?? null,
+        currency: fx.currency,
+        price_original: fx.price_original,
+        fx_rate: fx.fx_rate,
       });
       if (sErr) throw sErr;
       // Harvest the manufacturer part number off the page (for the app's
@@ -82,7 +90,8 @@ async function scrapeDealer(dealer) {
         await supabase.from('tool_listings').update({ mpn: res.mpn }).eq('id', listing.id);
       }
       ok++;
-      console.log(`  ok  listing ${listing.id}  $${res.price}${res.on_sale ? ' (sale)' : ''}${anomaly ? '  !! ANOMALY (excluded from stats)' : ''}`);
+      const conv = fx.currency !== 'CAD' ? `  (${fx.price_original} ${fx.currency} @ ${fx.fx_rate})` : '';
+      console.log(`  ok  listing ${listing.id}  $${fx.price_cad} CAD${conv}${res.on_sale ? ' (sale)' : ''}${anomaly ? '  !! ANOMALY (excluded from stats)' : ''}`);
     } catch (err) {
       fail++;
       const entry = { listing_id: listing.id, url: listing.product_url, error: String(err?.message || err) };

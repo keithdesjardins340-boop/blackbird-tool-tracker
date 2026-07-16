@@ -300,7 +300,10 @@
           <div><span class="status-dot ${cls}"></span><b>${esc(d.name)}</b></div>
           <div class="tool-sub">last run ${fmtDate(d.last_run_at)} · ${d.ok_count ?? 0} ok / ${d.fail_count ?? 0} fail</div>
         </div>
-        <div class="tool-sub" style="text-align:right">${esc(label)}</div>
+        <div class="dealer-actions">
+          <span class="tool-sub">${esc(label)}</span>
+          <button class="link-x" data-del-dealer="${d.dealer_id}" data-name="${esc(d.name)}" title="Delete this dealer">✕</button>
+        </div>
       </div>`;
     };
     view.innerHTML = '<div class="section-title">Scraper health — last run per dealer</div>'
@@ -308,6 +311,29 @@
       + state.health.map(row).join('');
     const rbH = document.getElementById('runScrapeH');
     if (rbH) rbH.onclick = () => triggerScrape(document.getElementById('runScrapeHMsg'));
+    view.querySelectorAll('[data-del-dealer]').forEach((b) => {
+      b.onclick = () => deleteDealer(b.dataset.delDealer, b.dataset.name);
+    });
+  }
+
+  // Delete a dealer. Dealers auto-register from pasted links, so a typo'd or junk
+  // one needs a way out. The server first reports what would be lost (the delete
+  // cascades to that dealer's links and their price history) — we only send
+  // confirm:true after the user has seen the count.
+  async function deleteDealer(id, name) {
+    if (!ensureKey()) return;
+    try {
+      const probe = await SB.writeApi('delete_dealer', { id });
+      if (!probe.deleted) {
+        if (!confirm(`${probe.message}\n\nThis can't be undone.`)) return;
+        const res = await SB.writeApi('delete_dealer', { id, confirm: true });
+        if (!res.deleted) return;
+      }
+      await loadAll();
+      render();
+    } catch (e) {
+      alert(`Could not delete "${name}": ${e.message}`);
+    }
   }
 
   function renderImport() {
@@ -380,6 +406,16 @@
     };
   }
 
+  // Every price shown is CAD. When the dealer quoted another currency we say so,
+  // with the original amount and the rate used — a converted number should never
+  // look like it came off the page as-is.
+  function fxNote(s) {
+    if (!s || !s.currency || s.currency === 'CAD') return '';
+    const orig = s.price_original != null ? `${Number(s.price_original).toFixed(2)} ${esc(s.currency)}` : esc(s.currency);
+    const rate = s.fx_rate != null ? ` @ ${Number(s.fx_rate).toFixed(4)}` : '';
+    return ` · <span class="fx-note">converted from ${orig}${rate}</span>`;
+  }
+
   // ---- detail overlay --------------------------------------------------
   const detail = document.getElementById('detail');
   const detailBody = document.getElementById('detailBody');
@@ -398,7 +434,7 @@
       let snaps = [];
       if (ids.length) {
         snaps = await SB.select('price_snapshots',
-          `select=listing_id,price_cad,regular_price_cad,on_sale,in_stock,scraped_at&listing_id=in.(${ids.join(',')})&order=scraped_at.asc`) || [];
+          `select=listing_id,price_cad,regular_price_cad,on_sale,in_stock,scraped_at,currency,price_original,fx_rate&listing_id=in.(${ids.join(',')})&order=scraped_at.asc`) || [];
       }
       const byListing = {};
       for (const s of snaps) (byListing[s.listing_id] ||= []).push(s);
@@ -436,7 +472,7 @@
         return `<div class="dealer-row${l.id === bestId ? ' best' : ''}">
           <div>
             <b>${esc(l.dealer?.name || '')}</b>${l.id === bestId ? ' <span class="best-tag">BEST</span>' : ''}${l.source === 'auto-desc' ? ' <span class="verify-tag" title="Auto-matched by description — open it to confirm it\'s the right product">≈ verify</span>' : ''}${oos ? ' <span class="badge oos">OOS</span>' : ''}
-            <div class="tool-sub">${last ? money(last.price_cad) + ' · ' + fmtDate(last.scraped_at) : 'no price yet — will scrape next run'}</div>
+            <div class="tool-sub">${last ? money(last.price_cad) + ' · ' + fmtDate(last.scraped_at) + fxNote(last) : 'no price yet — will scrape next run'}</div>
           </div>
           <div class="dealer-actions">
             <a href="${esc(l.product_url)}" target="_blank" rel="noopener">Open ↗</a>
@@ -718,6 +754,7 @@
   async function openImport(payload) {
     if (!ensureKey()) return;
     const price = parseNum(payload && payload.price);
+    const cur = (payload && payload.currency ? String(payload.currency).trim().toUpperCase() : '');
     const nurl = normalizeUrl((payload && payload.url) || '');
     let host = ''; try { host = new URL(nurl).hostname.replace(/^www\./, ''); } catch { /* */ }
     detail.classList.remove('hidden'); detail.setAttribute('aria-hidden', 'false');
@@ -735,16 +772,18 @@
     const info = `<h2>Import captured price</h2>
       <div class="tool-sub">${esc(payload.title || '(no title)')}</div>
       <div class="stat-grid">
-        <div class="stat"><div class="v">${money(price)}</div><div class="l">captured price</div></div>
+        <div class="stat"><div class="v">${money(price)}${cur && cur !== 'CAD' ? ` <span class="fx-note">${esc(cur)}</span>` : ''}</div>
+          <div class="l">captured price</div></div>
         <div class="stat"><div class="v">${esc(host || '—')}</div><div class="l">dealer (from link)</div></div>
       </div>
+      ${cur && cur !== 'CAD' ? `<div class="note warn">⚠ This page quotes ${esc(cur)} — it'll be converted to CAD at today's Bank of Canada rate when saved.</div>` : ''}
       <div class="note" style="word-break:break-all">${esc(nurl)}</div>`;
 
     if (match) {
       detailBody.innerHTML = info
         + `<div class="note">Already tracked for <b>${esc(match.tool?.name || '')}</b> at <b>${esc(match.dealer?.name || '')}</b>.</div>`
         + `<div class="form-actions"><button class="btn" id="imGo">Record ${money(price)}</button><button class="btn secondary" id="imCancel">Cancel</button></div><div id="imMsg" class="note"></div>`;
-      document.getElementById('imGo').onclick = () => doImport('record_price', { listing_id: match.id, price });
+      document.getElementById('imGo').onclick = () => doImport('record_price', { listing_id: match.id, price, currency: cur || null });
     } else {
       const opts = state.tools.slice().sort((a, b) => a.name.localeCompare(b.name))
         .map((t) => `<option value="${t.tool_id}">${esc(t.name)}</option>`).join('');
@@ -759,7 +798,7 @@
       document.getElementById('imGo').onclick = () => {
         const tid = document.getElementById('imTool').value;
         const newName = document.getElementById('imNew').value.trim();
-        const op = { product_url: nurl, price };
+        const op = { product_url: nurl, price, currency: cur || null };
         if (tid) op.tool_id = tid;
         else if (newName) op.fields = { name: newName };
         else { document.getElementById('imMsg').textContent = 'Pick a tool or type a new name.'; return; }
@@ -777,9 +816,12 @@
       await loadAll();
       closeDetail();
       if (res.tool_id) openDetail(res.tool_id);
+      const conv = res.currency && res.currency !== 'CAD'
+        ? ` — converted from ${res.currency} at ${Number(res.fx_rate).toFixed(4)}, saved as ${money(res.price)} CAD`
+        : '';
       alert(res.is_anomaly
-        ? 'Price saved — but it looks off versus history, so it was flagged and excluded from stats.'
-        : 'Price saved.');
+        ? `Price saved${conv}. It looks off versus history, so it was flagged and excluded from stats.`
+        : `Price saved${conv}.`);
     } catch (e) {
       if (msg) msg.textContent = 'Import failed: ' + e.message;
     }

@@ -57,12 +57,14 @@ Make a new bookmark and paste this as its **URL** (it's plain JS — no install,
 build). If your dashboard isn't at the address below, change that one URL inside it:
 
 ```
-javascript:(function(){function P(){for(const s of document.querySelectorAll('script[type="application/ld+json"]')){try{const d=JSON.parse(s.textContent);const a=Array.isArray(d)?d:(d['@graph']||[d]);for(const o of a){const t=o&&o['@type'];if(t==='Product'||(Array.isArray(t)&&t.includes('Product'))){let f=o.offers;if(Array.isArray(f))f=f[0];const p=f&&(f.price||f.lowPrice||f.highPrice);if(p)return{title:o.name,price:p}}}}catch(e){}}const m=document.querySelector('meta[property="product:price:amount"],meta[property="og:price:amount"],meta[itemprop="price"]');if(m)return{title:(document.querySelector('meta[property="og:title"]')||{}).content||document.title,price:m.content};return null}var d=P();if(!d||!d.price){alert('No price found on this page.');return}var q={title:d.title||document.title,price:String(d.price),url:location.href};var b=btoa(unescape(encodeURIComponent(JSON.stringify(q))));window.open('https://keithdesjardins340-boop.github.io/blackbird-tool-tracker/#import='+b,'_blank')})();
+javascript:(function(){function P(){for(const s of document.querySelectorAll('script[type="application/ld+json"]')){try{const d=JSON.parse(s.textContent);const a=Array.isArray(d)?d:(d['@graph']||[d]);for(const o of a){const t=o&&o['@type'];if(t==='Product'||(Array.isArray(t)&&t.includes('Product'))){let f=o.offers;if(Array.isArray(f))f=f[0];const p=f&&(f.price||f.lowPrice||f.highPrice);if(p)return{title:o.name,price:p,currency:f.priceCurrency||''}}}}catch(e){}}const m=document.querySelector('meta[property="product:price:amount"],meta[property="og:price:amount"],meta[itemprop="price"]');if(m){const c=document.querySelector('meta[property="product:price:currency"],meta[property="og:price:currency"],meta[itemprop="priceCurrency"]');return{title:(document.querySelector('meta[property="og:title"]')||{}).content||document.title,price:m.content,currency:(c&&c.content)||''}}return null}var d=P();if(!d||!d.price){alert('No price found on this page.');return}var q={title:d.title||document.title,price:String(d.price),currency:d.currency||'',url:location.href};var b=btoa(unescape(encodeURIComponent(JSON.stringify(q))));window.open('https://keithdesjardins340-boop.github.io/blackbird-tool-tracker/#import='+b,'_blank')})();
 ```
 
 It reads the price from the page's structured data (JSON-LD, then meta tags), so it
-works on most retail product pages. The dashboard validates everything server-side
-(same anomaly gate as the scraper) and needs your access token to save.
+works on most retail product pages. It also grabs the page's **currency** — a US
+price is converted to CAD at the Bank of Canada's rate when you save, rather than
+being recorded as if it were Canadian. The dashboard validates everything
+server-side (same anomaly gate as the scraper) and needs your access token to save.
 
 ## "Run price scrape now" button (optional)
 

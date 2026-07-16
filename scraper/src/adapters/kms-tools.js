@@ -53,7 +53,7 @@ export default {
     const rp = parsePrice(oldTxt);
     if (rp && rp > price) regular_price = rp;
 
-    return result({ price, regular_price, in_stock: ld?.in_stock ?? null, parse_via, mpn: mpnFromProduct(product) });
+    return result({ price, regular_price, in_stock: ld?.in_stock ?? null, parse_via, currency: ld?.currency ?? null, mpn: mpnFromProduct(product) });
   },
 
   async search(model) {

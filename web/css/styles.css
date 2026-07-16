@@ -168,6 +168,8 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 16px 14px 48px; }
 .dealer-row a:hover { border-color: var(--ink); }
 .best-tag { font-size: 10px; font-weight: 800; color: #fff; background: var(--good-ink); border-radius: 999px; padding: 1px 7px; vertical-align: middle; letter-spacing: .4px; }
 .verify-tag { font-size: 10px; font-weight: 700; color: var(--muted); border: 1px dashed var(--line-2); border-radius: 999px; padding: 1px 7px; vertical-align: middle; }
+/* "converted from 99.00 USD @ 1.3712" — prices are always shown in CAD. */
+.fx-note { color: var(--warn-ink); font-weight: 600; }
 .dealer-actions { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
 .link-x { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 8px; width: 28px; height: 28px; cursor: pointer; font-size: 13px; transition: all .12s; }
 .link-x:hover { border-color: var(--ink); color: var(--ink); }

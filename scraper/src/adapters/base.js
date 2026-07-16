@@ -76,7 +76,7 @@ export function findJsonLdProduct($) {
   return flat.find(isProduct) || null;
 }
 
-/** Pull a normalized offer {price, in_stock} out of a JSON-LD Product node. */
+/** Pull a normalized offer {price, currency, in_stock} out of a JSON-LD Product. */
 export function offerFromProduct(product) {
   if (!product) return null;
   let offers = product.offers;
@@ -86,7 +86,9 @@ export function offerFromProduct(product) {
   const avail = String(offers.availability || '').toLowerCase();
   let in_stock = null;
   if (avail) in_stock = avail.includes('instock') || avail.includes('in_stock') || avail.includes('limited');
-  return { price, in_stock };
+  // priceCurrency is what tells us a "$" is USD, not CAD — never drop it.
+  const currency = offers.priceCurrency || offers.priceSpecification?.priceCurrency || null;
+  return { price, in_stock, currency };
 }
 
 /** Manufacturer part number from a JSON-LD Product node (mpn/sku/gtin). */
@@ -96,6 +98,23 @@ export function mpnFromProduct(product) {
   if (!raw) return null;
   const s = String(Array.isArray(raw) ? raw[0] : raw).trim();
   return s && s.length <= 40 ? s : null;
+}
+
+/** Meta-tag currency, paired with metaPrice(). null when the page doesn't say. */
+export function metaCurrency($) {
+  const sel = [
+    'meta[property="product:price:currency"]',
+    'meta[property="og:price:currency"]',
+    'meta[itemprop="priceCurrency"]',
+    '[itemprop="priceCurrency"]',
+  ];
+  for (const s of sel) {
+    const el = $(s).first();
+    if (!el.length) continue;
+    const val = (el.attr('content') || el.attr('value') || el.text() || '').trim();
+    if (val) return val;
+  }
+  return null;
 }
 
 /** Meta-tag price fallback (og:price / product:price / itemprop). */
@@ -117,11 +136,13 @@ export function metaPrice($) {
 }
 
 /** Standard result shape, with nulls for anything we couldn't read. parse_via
- * records which extraction strategy produced the price (for diagnostics). */
-export function result({ price = null, regular_price = null, on_sale = null, in_stock = null, parse_via = null, mpn = null } = {}) {
+ * records which extraction strategy produced the price (for diagnostics).
+ * `currency` is the code the PAGE declared (null = undeclared → assumed CAD by
+ * the runner); prices here are still raw — conversion happens in run.js. */
+export function result({ price = null, regular_price = null, on_sale = null, in_stock = null, parse_via = null, mpn = null, currency = null } = {}) {
   // Infer on_sale when we have both prices and no explicit flag.
   if (on_sale == null && price != null && regular_price != null) {
     on_sale = price < regular_price;
   }
-  return { price, regular_price, on_sale, in_stock, parse_via, mpn };
+  return { price, regular_price, on_sale, in_stock, parse_via, mpn, currency };
 }

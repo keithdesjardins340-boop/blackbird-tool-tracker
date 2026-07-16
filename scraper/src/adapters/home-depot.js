@@ -55,6 +55,9 @@ export default {
     const { price, regular_price, in_stock } = extractPrice(html, m ? m[1] : null);
     if (price == null) throw new Error(`HD price not found (page structure changed or blocked): ${productUrl}`);
     const mm = html.match(/"modelNumber":"([^"]{1,40})"/);
-    return result({ price, regular_price, in_stock, parse_via: 'json-embed', mpn: mm ? mm[1] : null });
+    // HD states the currency next to the price ("currencyIso":"CAD") — use it
+    // rather than assuming, so the runner's conversion step is fed real data.
+    const cm = html.match(/"currencyIso":"([A-Z]{3})"/);
+    return result({ price, regular_price, in_stock, parse_via: 'json-embed', currency: cm ? cm[1] : null, mpn: mm ? mm[1] : null });
   },
 };

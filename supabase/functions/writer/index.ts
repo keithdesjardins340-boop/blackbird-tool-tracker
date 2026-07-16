@@ -128,6 +128,62 @@ async function isAnomaly(admin: any, listingId: number, price: number): Promise<
   return median > 0 && (price > median * 5 || price < median * 0.2);
 }
 
+// Currency → CAD (mirror of scraper/src/util/fx.js). Bank of Canada Valet API:
+// official, free, no key, CAD-based. Fails CLOSED — a non-CAD price we cannot
+// convert is REJECTED rather than written into price_cad as if it were Canadian.
+const FX_SERIES: Record<string, string> = {
+  USD: "FXUSDCAD", EUR: "FXEURCAD", GBP: "FXGBPCAD", AUD: "FXAUDCAD",
+  JPY: "FXJPYCAD", CHF: "FXCHFCAD", MXN: "FXMXNCAD", CNY: "FXCNYCAD",
+};
+const fxCache = new Map<string, number>();
+
+function normCurrency(raw: unknown): string | null {
+  const s = String(raw ?? "").trim().toUpperCase();
+  if (/^[A-Z]{3}$/.test(s)) return s;
+  if (s === "$" || s === "C$" || s === "CA$" || s === "CAD$") return "CAD";
+  return null;
+}
+
+async function rateToCad(cur: string): Promise<number> {
+  if (cur === "CAD") return 1;
+  if (fxCache.has(cur)) return fxCache.get(cur)!;
+  const series = FX_SERIES[cur];
+  if (!series) throw new Error(`No CAD conversion rate is available for ${cur}.`);
+  const r = await fetch(`https://www.bankofcanada.ca/valet/observations/${series}/json?recent=1`,
+    { headers: { Accept: "application/json" } });
+  if (!r.ok) throw new Error(`Couldn't reach the Bank of Canada for a ${cur}→CAD rate — price not saved.`);
+  const j = await r.json();
+  const rate = Number(j?.observations?.[0]?.[series]?.v);
+  if (!Number.isFinite(rate) || rate <= 0) throw new Error(`Bad ${cur}→CAD rate — price not saved.`);
+  fxCache.set(cur, rate);
+  return rate;
+}
+
+/** An undeclared currency is assumed CAD (the norm for the Canadian dealers here). */
+async function toCad(price: number, regular: number | null, currency: unknown) {
+  const cur = normCurrency(currency) || "CAD";
+  const fx_rate = await rateToCad(cur);
+  const conv = (v: number | null) => (v == null ? null : Math.round(v * fx_rate * 100) / 100);
+  return {
+    price_cad: conv(price) as number,
+    regular_cad: conv(regular),
+    currency: cur,
+    price_original: cur === "CAD" ? null : price,
+    fx_rate,
+  };
+}
+
+// Build the snapshot row shared by both capture ops.
+function snapshotRow(listingId: number, fx: Awaited<ReturnType<typeof toCad>>, p: Record<string, unknown>) {
+  const snap: Record<string, unknown> = {
+    listing_id: listingId, price_cad: fx.price_cad, parse_via: "manual-capture",
+    currency: fx.currency, price_original: fx.price_original, fx_rate: fx.fx_rate,
+  };
+  if (p.in_stock != null) snap.in_stock = !!p.in_stock;
+  if (fx.regular_cad != null && fx.regular_cad > fx.price_cad) { snap.regular_price_cad = fx.regular_cad; snap.on_sale = true; }
+  return snap;
+}
+
 // deno-lint-ignore no-explicit-any
 async function handle(admin: any, op: string, p: Record<string, any>) {
   const req = (cond: unknown, msg: string) => { if (!cond) throw new Error(msg); };
@@ -260,14 +316,13 @@ async function handle(admin: any, op: string, p: Record<string, any>) {
       const { data: listing } = await admin.from("tool_listings").select("id").eq("id", asInt(p.listing_id)).maybeSingle();
       req(listing, "listing not found");
       await admin.from("tool_listings").update({ active: true }).eq("id", listing.id); // a manual capture proves the link is live
-      const anomaly = await isAnomaly(admin, listing.id, price);
       const rp = Number(p.regular_price);
-      const snap: Record<string, unknown> = { listing_id: listing.id, price_cad: price, is_anomaly: anomaly, parse_via: "manual-capture" };
-      if (p.in_stock != null) snap.in_stock = !!p.in_stock;
-      if (Number.isFinite(rp) && rp > price) { snap.regular_price_cad = rp; snap.on_sale = true; }
-      const { error } = await admin.from("price_snapshots").insert(snap);
+      const fx = await toCad(price, Number.isFinite(rp) ? rp : null, p.currency);
+      const anomaly = await isAnomaly(admin, listing.id, fx.price_cad);
+      const { error } = await admin.from("price_snapshots")
+        .insert({ ...snapshotRow(listing.id, fx, p), is_anomaly: anomaly });
       if (error) throw error;
-      return { listing_id: listing.id, price, is_anomaly: anomaly };
+      return { listing_id: listing.id, price: fx.price_cad, is_anomaly: anomaly, currency: fx.currency, fx_rate: fx.fx_rate };
     }
     case "add_listing_with_price": {
       // Create/attach a manual listing for a URL AND record its first price, in one
@@ -302,14 +357,37 @@ async function handle(admin: any, op: string, p: Record<string, any>) {
         if (lErr) throw lErr;
         listingId = created.id;
       }
-      const anomaly = await isAnomaly(admin, listingId, price);
       const rp = Number(p.regular_price);
-      const snap: Record<string, unknown> = { listing_id: listingId, price_cad: price, is_anomaly: anomaly, parse_via: "manual-capture" };
-      if (p.in_stock != null) snap.in_stock = !!p.in_stock;
-      if (Number.isFinite(rp) && rp > price) { snap.regular_price_cad = rp; snap.on_sale = true; }
-      const { error: sErr } = await admin.from("price_snapshots").insert(snap);
+      const fx = await toCad(price, Number.isFinite(rp) ? rp : null, p.currency);
+      const anomaly = await isAnomaly(admin, listingId, fx.price_cad);
+      const { error: sErr } = await admin.from("price_snapshots")
+        .insert({ ...snapshotRow(listingId, fx, p), is_anomaly: anomaly });
       if (sErr) throw sErr;
-      return { tool_id: toolId, listing_id: listingId, price, is_anomaly: anomaly };
+      return { tool_id: toolId, listing_id: listingId, price: fx.price_cad, is_anomaly: anomaly, currency: fx.currency, fx_rate: fx.fx_rate };
+    }
+    case "delete_dealer": {
+      // Dealers auto-register from pasted hostnames, so the owner needs a way to
+      // remove a wrong/junk one. tool_listings.dealer_id is ON DELETE CASCADE, so
+      // this also drops that dealer's links AND their price history — never do it
+      // silently: report the blast radius first and require an explicit confirm.
+      req(asInt(p.id), "id required");
+      const id = asInt(p.id) as number;
+      const { data: dealer } = await admin.from("dealers").select("id,name").eq("id", id).maybeSingle();
+      req(dealer, "dealer not found");
+      const { count: listings } = await admin.from("tool_listings")
+        .select("*", { count: "exact", head: true }).eq("dealer_id", id);
+      const n = listings ?? 0;
+      if (!p.confirm) {
+        return {
+          deleted: false, needs_confirm: true, dealer: dealer.name, listings: n,
+          message: n
+            ? `Deleting "${dealer.name}" also removes ${n} link${n === 1 ? "" : "s"} and their price history.`
+            : `Delete "${dealer.name}"? It has no links.`,
+        };
+      }
+      const { error } = await admin.from("dealers").delete().eq("id", id);
+      if (error) throw error;
+      return { deleted: true, dealer: dealer.name, listings_removed: n };
     }
     case "import_tools": {
       const rows: Record<string, unknown>[] = Array.isArray(p.rows) ? p.rows : [];
