@@ -149,9 +149,11 @@
       state.sparks = {};
       if (listingIds.length) {
         const since = new Date(Date.now() - 90 * 864e5).toISOString();
+        // is_anomaly=false: a flagged read is a parser mistake, not price history —
+        // it must not spike the sparkline any more than it counts toward stats.
         const rows = await SB.select(
           'price_snapshots',
-          `select=listing_id,price_cad,scraped_at&listing_id=in.(${listingIds.join(',')})&scraped_at=gte.${since}&order=scraped_at.asc`
+          `select=listing_id,price_cad,scraped_at&listing_id=in.(${listingIds.join(',')})&scraped_at=gte.${since}&is_anomaly=eq.false&order=scraped_at.asc`
         );
         for (const r of rows || []) (state.sparks[r.listing_id] ||= []).push(Number(r.price_cad));
       }
@@ -595,6 +597,19 @@
         }
         byDealer.set(l.dealer_id, e);
       }
+      // A dealer can hold two links for one tool at once — an old URL beside its
+      // replacement, or two pages for the same product. Merging them raw would
+      // saw-tooth between the two prices, so each scrape window collapses to that
+      // dealer's CHEAPEST reading: what you'd actually pay there that day.
+      const collapse = (pts) => {
+        const byHour = new Map(); // scrapes are 12h apart, so an hour can't merge two runs
+        for (const p of pts) {
+          const k = Math.round(+new Date(p.t) / 3600000);
+          const cur = byHour.get(k);
+          if (!cur || p.price < cur.price) byHour.set(k, p);
+        }
+        return [...byHour.values()].sort((a, b) => +new Date(a.t) - +new Date(b.t));
+      };
       // Colour/dash are keyed to the DEALER, so a dealer keeps its colour as links
       // are added or removed — the legend and the line always agree.
       const slots = Charts.assignSlots([...byDealer.keys()]);
@@ -602,7 +617,7 @@
         label: e.label,
         color: Charts.colorAt(slots.get(e.dealer_id) ?? 0),
         dash: Charts.dashAt(slots.get(e.dealer_id) ?? 0),
-        points: e.points.sort((a, b) => +new Date(a.t) - +new Date(b.t)),
+        points: collapse(e.points),
       }));
 
       const chart = Charts.lineChart(series);
