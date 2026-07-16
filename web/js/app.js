@@ -1,5 +1,6 @@
+import { DEAL_PCT } from './constants.js';
+
 (function () {
-  const { DEAL_PCT } = window.BBT_CONFIG;
   const view = document.getElementById('view');
   const state = {
     tab: 'checklist',

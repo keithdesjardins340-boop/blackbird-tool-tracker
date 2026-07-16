@@ -4,6 +4,6 @@
 window.BBT_CONFIG = {
   SUPABASE_URL: 'https://ssfhjhbarkpgbelnbcun.supabase.co',
   SUPABASE_ANON_KEY: 'sb_publishable_oXihjGZ6k86Af2pDF5ooqw_si-iILGM',
-  // Thresholds
-  DEAL_PCT: -10,       // % vs 90-day avg that counts as a deal
 };
+// Thresholds (DEAL_PCT, …) are NOT here: they live in js/constants.js, which the
+// scraper imports too, so the Deals tab and the run report can't drift apart.

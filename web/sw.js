@@ -1,10 +1,13 @@
 // Offline-capable service worker with a NETWORK-FIRST strategy for the app
 // shell, so a fresh deploy is always picked up when online; the cache is only a
 // fallback when offline. Supabase API calls are never cached (always fresh).
-const CACHE = 'bbt-shell-v18'; // bump on every deploy → old caches cleared + update toast fires
+const CACHE = 'bbt-shell-v19'; // bump on every deploy → old caches cleared + update toast fires
 const SHELL = [
   '.', 'index.html', 'css/styles.css',
-  'js/config.js', 'js/supabase.js', 'js/charts.js', 'js/app.js',
+  // constants.js is imported BY app.js, so it must be precached too — a module
+  // import that misses the cache takes the whole app down offline, and the
+  // checklist is exactly what he needs in a basement with no signal.
+  'js/config.js', 'js/constants.js', 'js/supabase.js', 'js/charts.js', 'js/app.js',
   'manifest.webmanifest', 'icon.svg',
 ];
 

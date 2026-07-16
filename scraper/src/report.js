@@ -4,6 +4,9 @@
 // Read-only.
 
 import { supabase } from './supabase.js';
+// Same file the dashboard imports — the report and the Deals tab must agree on
+// what a deal IS, or one of them is lying to him.
+import { DEAL_PCT } from '../../web/js/constants.js';
 
 const money = (v) => (v == null ? '—' : `$${Number(v).toFixed(2)}`);
 const fmt = (s) => (s ? new Date(s).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : '—');
@@ -64,7 +67,7 @@ async function main() {
     L.push('_Every active link got a fresh price. ✅_');
   }
 
-  const isDeal = (t) => t.at_all_time_low || (t.pct_vs_avg_90d != null && t.pct_vs_avg_90d <= -10);
+  const isDeal = (t) => t.at_all_time_low || (t.pct_vs_avg_90d != null && t.pct_vs_avg_90d <= DEAL_PCT);
   const deals = (priced || []).filter(isDeal)
     .sort((a, b) => (a.at_all_time_low ? -999 : a.pct_vs_avg_90d ?? 0) - (b.at_all_time_low ? -999 : b.pct_vs_avg_90d ?? 0))
     .slice(0, 10);
