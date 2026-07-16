@@ -110,9 +110,11 @@ Function** (`verify_jwt=false`; auth is a token): the dashboard sends a per-devi
 **writer token** (localStorage `bbt_writer_token`) in the `x-writer-token` header;
 the function validates it (constant-time) against `app_secrets.writer_token`, then
 runs a **fixed op whitelist** with payloads sanitized to known columns — no generic
-SQL. Ops: `toggle_owned, update_tool, insert_tool, delete_tool, insert_listing,
-remove_listing, accept_candidate, add_tool_with_links, trigger_scrape, record_price,
-add_listing_with_price, import_tools`.
+SQL. Ops: `toggle_owned, update_tool, delete_tool, remove_listing, accept_candidate,
+add_tool_with_links, trigger_scrape, record_price, add_listing_with_price,
+delete_dealer, import_tools`. Every op that attaches a link goes through one
+`attachListing()` helper (revive-if-removed, never move a link between tools), so
+they can't drift apart.
 - **Get the token:** `select value from app_secrets where key='writer_token';` in the
   Supabase SQL editor → paste into the dashboard **Settings** tab.
 - **Rotate/revoke:** `update app_secrets set value=encode(gen_random_bytes(24),'hex')

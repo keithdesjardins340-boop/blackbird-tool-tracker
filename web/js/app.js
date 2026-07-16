@@ -502,7 +502,7 @@
     detailBody.innerHTML = '<div class="loading">Loading history…</div>';
     try {
       const listings = await SB.select('tool_listings',
-        `select=id,product_url,sku,active,source,match_score,mpn,dealer:dealers(name)&tool_id=eq.${toolId}`);
+        `select=id,product_url,sku,active,source,match_score,mpn,dealer_id,dealer:dealers(name)&tool_id=eq.${toolId}`);
       const ids = (listings || []).map((l) => l.id);
       let snaps = [];
       if (ids.length) {
@@ -526,15 +526,23 @@
       // the ✕ would look broken, and worse, a removed link could still win BEST.
       const live = (listings || []).filter((l) => l.active);
 
-      const series = live.map((l) => ({
-        label: l.dealer?.name || `Listing ${l.id}`,
-        listingId: l.id,
-        points: (byListing[l.id] || []).map((s) => ({ t: s.scraped_at, price: Number(s.price_cad) })),
-      }));
+      // Colour/dash are keyed to the DEALER, so a dealer keeps its colour as links
+      // are added or removed — the legend and the line always agree.
+      const slots = Charts.assignSlots(live.map((l) => l.dealer_id));
+      const series = live.map((l) => {
+        const slot = slots.get(l.dealer_id) ?? 0;
+        return {
+          label: l.dealer?.name || `Listing ${l.id}`,
+          listingId: l.id,
+          color: Charts.colorAt(slot),
+          dash: Charts.dashAt(slot),
+          points: (byListing[l.id] || []).map((s) => ({ t: s.scraped_at, price: Number(s.price_cad) })),
+        };
+      });
 
       const chart = Charts.lineChart(series);
-      const legend = series.map((s, i) =>
-        `<span class="k"><span class="sw" style="background:${Charts.colorFor(i)}"></span>${esc(s.label)}</span>`).join('');
+      const legend = series.map((s) =>
+        `<span class="k"><span class="sw" style="background:${s.color}"></span>${esc(s.label)}</span>`).join('');
 
       // One row per dealer, cheapest first; the lowest in-stock price is BEST —
       // this is the single "one deal per tool" the user buys from.

@@ -9,6 +9,26 @@
   const COLORS = ['#2a78d6', '#1baf7a', '#eda100', '#008300', '#4a3aa7', '#e34948'];
   const DASHES = ['', '5,3', '2,3', '8,3', '2,2', '6,2,2,2'];
 
+  // Colour follows the ENTITY (the dealer), never its position in the list —
+  // otherwise removing one dealer repaints all the others and last week's chart
+  // no longer means what this week's does. The slot is derived from the dealer's
+  // id, so a dealer keeps its colour for good. On the rare collision (two ids
+  // landing on the same slot) the next free slot is taken: uniqueness inside one
+  // chart has to win, because two identically-drawn lines are unreadable.
+  const colorAt = (slot) => COLORS[((slot % COLORS.length) + COLORS.length) % COLORS.length];
+  const dashAt = (slot) => DASHES[((slot % DASHES.length) + DASHES.length) % DASHES.length];
+  function assignSlots(keys) {
+    const used = new Set();
+    const out = new Map();
+    for (const k of [...new Set(keys)].sort((a, b) => Number(a) - Number(b))) {
+      const n = Number(k);
+      let s = Number.isFinite(n) ? Math.abs(Math.trunc(n)) % COLORS.length : 0;
+      for (let i = 0; used.has(s) && i < COLORS.length; i++) s = (s + 1) % COLORS.length;
+      used.add(s); out.set(k, s);
+    }
+    return out;
+  }
+
   function sparkline(values, { w = 96, h = 28, stroke = '#09090b' } = {}) {
     const pts = values.filter((v) => v != null);
     if (pts.length === 0) return `<svg class="spark" width="${w}" height="${h}"></svg>`;
@@ -60,8 +80,10 @@
     }
 
     const paths = series.map((s, i) => {
-      const color = COLORS[i % COLORS.length];
-      const dash = DASHES[i % DASHES.length];
+      // s.color/s.dash come from the entity slot when the caller supplies one;
+      // the index is only a fallback for callers with no stable key.
+      const color = s.color || colorAt(i);
+      const dash = s.dash != null ? s.dash : dashAt(i);
       const ps = s.points.filter((p) => p.price != null).sort((a, b) => +new Date(a.t) - +new Date(b.t));
       if (!ps.length) return '';
       const d = ps.map((p, j) => `${j === 0 ? 'M' : 'L'}${X(p.t).toFixed(1)},${Y(p.price).toFixed(1)}`).join(' ');
@@ -72,6 +94,6 @@
     return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img">${grid}${paths}</svg>`;
   }
 
-  const colorFor = (i) => COLORS[i % COLORS.length];
-  window.Charts = { sparkline, lineChart, colorFor };
+  const colorFor = (i) => colorAt(i); // legacy: index-based, kept for old callers
+  window.Charts = { sparkline, lineChart, colorFor, assignSlots, colorAt, dashAt };
 })();

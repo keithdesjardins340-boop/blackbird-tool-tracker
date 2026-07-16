@@ -38,7 +38,6 @@ const pick = (obj: Record<string, unknown>, cols: string[]) => {
   return out;
 };
 const asInt = (v: unknown) => (v == null || v === "" ? null : Number.parseInt(String(v), 10));
-const LISTING_SOURCES = new Set(["manual", "auto-desc", "auto-sku"]);
 
 // Mirror of scraper/src/util/url.js so pasted links dedupe the same way.
 const TRACKING = /^(utm_.*|gclid|fbclid|msclkid|mc_cid|mc_eid|_ga|igshid|yclid|gbraid|wbraid|dclid|scid|cmpid|icid)$/i;
@@ -173,6 +172,62 @@ async function toCad(price: number, regular: number | null, currency: unknown) {
   };
 }
 
+// Attach a URL to a tool. The unique key is (dealer_id, product_url), so a link
+// lives in exactly one place: revive it if it's this tool's and was removed, and
+// NEVER move it off another tool. Shared by every op that adds a link, so they
+// all behave the same instead of some throwing a raw duplicate-key error.
+// deno-lint-ignore no-explicit-any
+async function attachListing(admin: any, toolId: number, dealerId: number, url: string, source = "manual") {
+  const { data: existing } = await admin.from("tool_listings")
+    .select("id,tool_id,active").eq("dealer_id", dealerId).eq("product_url", url).maybeSingle();
+  if (existing) {
+    if (String(existing.tool_id) !== String(toolId)) return { state: "conflict", id: existing.id };
+    if (existing.active) return { state: "already", id: existing.id };
+    const { error } = await admin.from("tool_listings").update({ active: true }).eq("id", existing.id);
+    if (error) throw error;
+    return { state: "revived", id: existing.id };
+  }
+  const { data: created, error } = await admin.from("tool_listings")
+    .insert({ tool_id: toolId, dealer_id: dealerId, product_url: url, active: true, source })
+    .select("id").single();
+  if (error) throw error;
+  return { state: "added", id: created.id };
+}
+
+// A revived link brings its old prices back with it — and those prices may be
+// exactly why it was removed (a parser reading an add-on, a pre-fix currency bug).
+// Re-judge them against what the tool's other dealers charge and flag the wild
+// ones. Non-destructive: the rows stay for audit, they just stop counting toward
+// best price / averages / all-time low. Same thresholds as run.js.
+// deno-lint-ignore no-explicit-any
+async function reflagOutliers(admin: any, listingId: number, toolId: number): Promise<number> {
+  const { data: sibs } = await admin.from("tool_listings").select("id")
+    .eq("tool_id", toolId).eq("active", true).neq("id", listingId);
+  const ids = (sibs || []).map((s: { id: number }) => s.id);
+  if (ids.length < 2) return 0; // not enough references to judge against
+  const { data: snaps } = await admin.from("price_snapshots")
+    .select("listing_id,price_cad,scraped_at").in("listing_id", ids).eq("is_anomaly", false)
+    .order("scraped_at", { ascending: false });
+  const latest = new Map<number, number>();
+  for (const s of snaps || []) if (!latest.has(s.listing_id)) latest.set(s.listing_id, Number(s.price_cad));
+  const prices = [...latest.values()].filter((n) => n > 0).sort((a, b) => a - b);
+  if (prices.length < 2) return 0;
+  const median = prices[Math.floor(prices.length / 2)];
+  if (!(median > 0)) return 0;
+  const { data: mine } = await admin.from("price_snapshots")
+    .select("id,price_cad").eq("listing_id", listingId).eq("is_anomaly", false);
+  const bad = (mine || [])
+    .filter((r: { price_cad: number }) => {
+      const p = Number(r.price_cad);
+      return p > 0 && (p > median * 4 || p < median * 0.25);
+    })
+    .map((r: { id: number }) => r.id);
+  if (!bad.length) return 0;
+  const { error } = await admin.from("price_snapshots").update({ is_anomaly: true }).in("id", bad);
+  if (error) throw error;
+  return bad.length;
+}
+
 // Build the snapshot row shared by both capture ops.
 function snapshotRow(listingId: number, fx: Awaited<ReturnType<typeof toCad>>, p: Record<string, unknown>) {
   const snap: Record<string, unknown> = {
@@ -203,25 +258,10 @@ async function handle(admin: any, op: string, p: Record<string, any>) {
       const { error } = await admin.from("tools").update(fields).eq("id", asInt(p.id));
       if (error) throw error; return { id: asInt(p.id) };
     }
-    case "insert_tool": {
-      const fields = pick(p.fields || {}, TOOL_COLS);
-      req(fields.name, "name required");
-      const { data, error } = await admin.from("tools").insert(fields).select("id").single();
-      if (error) throw error; return { id: data.id };
-    }
     case "delete_tool": {
       req(asInt(p.id), "id required");
       const { error } = await admin.from("tools").delete().eq("id", asInt(p.id));
       if (error) throw error; return { id: asInt(p.id) };
-    }
-    case "insert_listing": {
-      req(asInt(p.tool_id) && asInt(p.dealer_id), "tool_id + dealer_id required");
-      req(typeof p.product_url === "string" && /^https?:\/\//i.test(p.product_url), "valid product_url required");
-      const source = LISTING_SOURCES.has(p.source) ? p.source : "manual";
-      const { error } = await admin.from("tool_listings").insert({
-        tool_id: asInt(p.tool_id), dealer_id: asInt(p.dealer_id), product_url: normalizeUrl(p.product_url), active: true, source,
-      });
-      if (error) throw error; return { ok: true };
     }
     case "remove_listing": {
       req(asInt(p.id), "id required");
@@ -231,12 +271,12 @@ async function handle(admin: any, op: string, p: Record<string, any>) {
     case "accept_candidate": {
       req(asInt(p.tool_id) && asInt(p.dealer_id), "tool_id + dealer_id required");
       req(typeof p.product_url === "string" && /^https?:\/\//i.test(p.product_url), "valid product_url required");
-      const { error } = await admin.from("tool_listings").insert({
-        tool_id: asInt(p.tool_id), dealer_id: asInt(p.dealer_id), product_url: normalizeUrl(p.product_url), active: true, source: "manual",
-      });
-      if (error) throw error;
+      const toolId = asInt(p.tool_id) as number;
+      const r = await attachListing(admin, toolId, asInt(p.dealer_id) as number, normalizeUrl(p.product_url));
+      req(r.state !== "conflict", "That link is already tracked under a different tool.");
+      if (r.state === "revived") await reflagOutliers(admin, r.id, toolId);
       if (asInt(p.cand_id)) await admin.from("map_candidates").update({ confident: true }).eq("id", asInt(p.cand_id));
-      return { ok: true };
+      return { ok: true, state: r.state };
     }
     case "add_tool_with_links": {
       // Quick-add (§3.1): create a tool (fields.name) OR attach to an existing
@@ -257,30 +297,21 @@ async function handle(admin: any, op: string, p: Record<string, any>) {
       let already = 0;        // already tracked on this tool — no-op
       const conflicts: string[] = []; // the URL belongs to a DIFFERENT tool
 
+      let reflagged = 0;
       for (const url of urls) {
         const dealerId = await resolveDealer(admin, url, cache);
         if (!dealerId) continue;
-        // Look the URL up rather than blind-upserting. A removed link still exists
-        // with active=false, so an "insert … do nothing" silently reported 0 added
-        // and the link could never be re-added. Reviving keeps its price history.
-        const { data: existing } = await admin.from("tool_listings")
-          .select("id,tool_id,active").eq("dealer_id", dealerId).eq("product_url", url).maybeSingle();
-        if (existing) {
-          // Never yank a link off another tool — the unique key is (dealer,url),
-          // so it can only live in one place. Report it instead.
-          if (String(existing.tool_id) !== String(toolId)) { conflicts.push(url); continue; }
-          if (existing.active) { already++; continue; }
-          const { error } = await admin.from("tool_listings").update({ active: true }).eq("id", existing.id);
-          if (error) throw error;
+        const r = await attachListing(admin, toolId as number, dealerId, url);
+        if (r.state === "conflict") { conflicts.push(url); continue; }
+        if (r.state === "already") { already++; continue; }
+        if (r.state === "revived") {
           links_revived++;
+          reflagged += await reflagOutliers(admin, r.id, toolId as number);
           continue;
         }
-        const { error } = await admin.from("tool_listings")
-          .insert({ tool_id: toolId, dealer_id: dealerId, product_url: url, active: true, source: "manual" });
-        if (error) throw error;
         links_added++;
       }
-      return { tool_id: toolId, links_added, links_revived, already, conflicts };
+      return { tool_id: toolId, links_added, links_revived, already, conflicts, reflagged };
     }
     case "trigger_scrape": {
       // Kick the scrape workflow via GitHub's workflow_dispatch (§3.4). The PAT
