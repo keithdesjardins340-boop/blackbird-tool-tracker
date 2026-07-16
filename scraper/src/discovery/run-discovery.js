@@ -120,5 +120,18 @@ export async function runDiscovery(store, env) {
   if (!dryRun) await store.markSearched(tools.map((t) => t.id));
 
   const dropped = Object.values(reasons).reduce((a, b) => a + b, 0);
-  return { skipped: false, searched, kept: unique.length, dropped, errors, reasons, dryRun };
+  // Return the leads themselves, not just a count. A dry run reporting "2 leads"
+  // without saying WHAT they are can't answer the only question it exists to
+  // answer — is this worth having? — and a count you can't check is the same
+  // unverifiable number this project keeps refusing to print.
+  const byId = new Map(tools.map((t) => [String(t.id), t]));
+  const leads = unique.map((r) => ({
+    tool: byId.get(String(r.tool_id))?.name || `tool ${r.tool_id}`,
+    best: byId.get(String(r.tool_id))?.best_price_cad ?? null,
+    merchant: r.merchant,
+    title: r.title,
+    price_seen: r.price_seen,
+    url: r.candidate_url,
+  }));
+  return { skipped: false, searched, kept: unique.length, dropped, errors, reasons, dryRun, leads };
 }
