@@ -7,6 +7,7 @@
     sparks: {},           // listing_id -> [price,...]
     health: [],
     dealers: [],          // {id,name} for the manual-link picker
+    issues: [],           // links the last scrape couldn't price (Health alert)
     filters: { tier: '', category: '', owned: '', priced: '', q: '' },
   };
 
@@ -40,12 +41,43 @@
     try { return JSON.parse(localStorage.getItem('bbt_cache') || 'null'); } catch { return null; }
   }
 
+  // ---- scraper issues (the "go fix this link" alert) --------------------
+  // run.js logs every failure as {listing_id,url,error} into scrape_runs.error_log
+  // (plus `deactivated` when a 404/410 killed the link), and dealer_health exposes
+  // the latest run's log per dealer. That's the alert: what the last pass couldn't
+  // price, i.e. links that moved, died, or got blocked.
+  function collectIssues() {
+    const out = [];
+    for (const d of state.health || []) {
+      let log = d.error_log;
+      if (typeof log === 'string') { try { log = JSON.parse(log); } catch { log = null; } }
+      for (const e of Array.isArray(log) ? log : []) out.push({ dealer: d.name, ...e });
+    }
+    return out;
+  }
+
+  // Attach the tool each broken link belongs to, so Health can link to the fix.
+  async function resolveIssueTools(issues) {
+    const ids = [...new Set(issues.map((i) => i.listing_id).filter(Boolean))];
+    if (!ids.length) return issues;
+    try {
+      const rows = await SB.select('tool_listings', `select=id,tool_id,tool:tools(name)&id=in.(${ids.join(',')})`);
+      const by = new Map((rows || []).map((r) => [r.id, r]));
+      for (const i of issues) {
+        const r = by.get(i.listing_id);
+        if (r) { i.tool_id = r.tool_id; i.tool = r.tool?.name; }
+      }
+    } catch { /* names are a nicety, not required */ }
+    return issues;
+  }
+
   // ---- data load -------------------------------------------------------
   async function loadAll() {
     if (!state.tools.length) {
       const c = loadCache();
       if (c && c.tools) {
         state.tools = c.tools; state.health = c.health || []; state.dealers = c.dealers || []; state.sparks = c.sparks || {};
+        state.issues = collectIssues();
         state.lastGoodAt = c.at; render(); // instant paint from cache
       } else {
         view.innerHTML = '<div class="loading">Loading…</div>';
@@ -60,6 +92,7 @@
       state.tools = tools || [];
       state.health = health || [];
       state.dealers = dealers || [];
+      state.issues = await resolveIssueTools(collectIssues());
 
       const listingIds = uniq(state.tools.map((t) => t.best_listing_id).filter((x) => x != null));
       state.sparks = {};
@@ -98,7 +131,8 @@
   }
 
   function filtersBar() {
-    const cats = uniq(state.tools.map((t) => t.category));
+    // Offer the standard categories plus anything custom already in the list.
+    const cats = uniq([...CATEGORIES, ...state.tools.map((t) => t.category)]);
     // Always offer the three buy-order tiers — even on an empty list — plus any
     // other tier value that actually exists in the data (legacy / imported).
     const tierKeys = TIERS.map((x) => x.key);
@@ -196,11 +230,21 @@
     </div>`;
   }
 
-  // Buy-order windows. Tier 1 first, then 2, then 3.
+  // Buy-order windows. Tier 1 first, then 2, then 3. Always shown, even empty.
   const TIERS = [
-    { key: 'Tier 1', label: 'Tier 1 — Buy first', desc: 'Always on the F-250, every shift' },
-    { key: 'Tier 2', label: 'Tier 2 — Buy next', desc: 'Job-pulled · seasonal · container-staged' },
-    { key: 'Tier 3', label: 'Tier 3 — Phase 2 (F-550)', desc: 'New capacity once the bigger truck is in play' },
+    { key: 'Tier 1', label: 'Tier 1', desc: 'Buy first' },
+    { key: 'Tier 2', label: 'Tier 2', desc: 'Buy next' },
+    { key: 'Tier 3', label: 'Tier 3', desc: 'Later' },
+  ];
+
+  // Ready-made categories so a new tool is a pick, not a typing exercise. Free
+  // text still works — this is the suggestion list, not a fence.
+  const CATEGORIES = [
+    'General Hand Tools', 'Wrenches', 'Sockets & Drives', 'Torque Tools',
+    'Cordless Power Tools', 'Pneumatics & Air Tools', 'Electrical & Diagnostics',
+    'Measuring & Inspection', 'Hydraulics', 'Cooling & Fuel', 'Lube & Fluids',
+    'A/C Service', 'Rigging & Lifting', 'Torch & Thermal', 'Track & Undercarriage',
+    'Storage & Organization', 'Safety & Spill', 'Consumables & Hardware',
   ];
 
   function progressBar(owned, total) {
@@ -225,7 +269,7 @@
   function renderChecklist() {
     const list = applyFilters(state.tools);
     const keyWarn = SB.hasWriterToken() ? ''
-      : '<div class="keybar">Checkmarks are read-only until you add your access token in the <b>Settings</b> tab — that turns on sync.</div>';
+      : '<div class="keybar">Add your access token in <b>Settings</b> to save checkmarks and edits.</div>';
     let html = filtersBar() + keyWarn
       + progressBar(list.filter((t) => t.owned).length, list.length);
 
@@ -234,10 +278,14 @@
     for (const t of list) (byTier[t.tier || 'Unassigned'] ||= []).push(t);
     const order = [...TIERS.map((x) => x.key), ...Object.keys(byTier).filter((k) => !TIERS.some((x) => x.key === k))];
 
+    // The three tier windows always render — an empty one is the prompt to fill it.
+    // Extra/legacy tiers only appear when they actually hold something, and a tier
+    // filter hides the others rather than leaving empty shells behind.
+    const showEmptyTiers = !state.filters.tier;
     for (const tk of order) {
-      const items = byTier[tk];
-      if (!items || !items.length) continue;
+      const items = byTier[tk] || [];
       const meta = TIERS.find((x) => x.key === tk);
+      if (!items.length && (!meta || !showEmptyTiers)) continue;
       const o = items.filter((t) => t.owned).length;
       html += `<section class="tier-window" data-tier="${esc(tk)}">
         <div class="tier-head">
@@ -245,7 +293,7 @@
             <div class="tier-desc">${esc(meta ? meta.desc : '')}</div></div>
           <div class="tier-count">${o}/${items.length}</div>
         </div>
-        ${catBlocks(items)}
+        ${items.length ? catBlocks(items) : '<div class="note" style="padding:4px 0 6px">Nothing here yet — add a tool with the ＋ button.</div>'}
       </section>`;
     }
     view.innerHTML = html;
@@ -285,6 +333,28 @@
     wireFilters();
   }
 
+  // The alert: every link the last pass couldn't price, with the tool it belongs
+  // to and a jump straight to it — that's the whole point, so a dead link becomes
+  // a 10-second fix instead of a surprise at buy time.
+  function issuesBlock() {
+    const iss = state.issues || [];
+    if (!iss.length) return '<div class="note" style="margin-bottom:12px">✓ Every link priced on the last run.</div>';
+    return `<div class="section-title">⚠ Needs attention (${iss.length})</div>
+      <div class="note" style="margin:-4px 0 8px">These links failed on the last run — the page moved, died, or blocked us. Open the tool and paste a fresh link.</div>
+      ${iss.map((i) => `<div class="health-row">
+        <div>
+          <div><span class="status-dot bad"></span><b>${esc(i.tool || 'Unknown tool')}</b>
+            <span class="tool-sub">@ ${esc(i.dealer || '')}</span>
+            ${i.deactivated ? ' <span class="badge oos">link dead</span>' : ''}</div>
+          <div class="tool-sub">${esc(String(i.error || '').slice(0, 80))}</div>
+        </div>
+        <div class="dealer-actions">
+          ${i.url ? `<a href="${esc(i.url)}" target="_blank" rel="noopener">Open ↗</a>` : ''}
+          ${i.tool_id ? `<button class="btn secondary btn-sm" data-fix-tool="${i.tool_id}">Fix</button>` : ''}
+        </div>
+      </div>`).join('')}`;
+  }
+
   function renderHealth() {
     if (!state.health.length) { view.innerHTML = '<div class="empty">No dealers.</div>'; return; }
     const row = (d) => {
@@ -306,13 +376,17 @@
         </div>
       </div>`;
     };
-    view.innerHTML = '<div class="section-title">Scraper health — last run per dealer</div>'
-      + '<div class="add-link" style="margin-bottom:12px"><button class="btn" id="runScrapeH">Run price scrape now</button><span id="runScrapeHMsg" class="note" style="align-self:center"></span></div>'
+    view.innerHTML = '<div class="add-link" style="margin-bottom:12px"><button class="btn" id="runScrapeH">Run price scrape now</button><span id="runScrapeHMsg" class="note" style="align-self:center"></span></div>'
+      + issuesBlock()
+      + '<div class="section-title">Dealers — last run</div>'
       + state.health.map(row).join('');
     const rbH = document.getElementById('runScrapeH');
     if (rbH) rbH.onclick = () => triggerScrape(document.getElementById('runScrapeHMsg'));
     view.querySelectorAll('[data-del-dealer]').forEach((b) => {
       b.onclick = () => deleteDealer(b.dataset.delDealer, b.dataset.name);
+    });
+    view.querySelectorAll('[data-fix-tool]').forEach((b) => {
+      b.onclick = () => openDetail(b.dataset.fixTool);
     });
   }
 
@@ -339,11 +413,10 @@
   function renderImport() {
     const hasKey = SB.hasWriterToken();
     view.innerHTML = `<div class="import-box">
-      <h3>Settings &amp; CSV import</h3>
-      <p class="note">Editing is protected by an <b>access token</b> — a revocable password that lets this device save changes (checkmarks, edits, links, CSV import) without ever holding the database admin key. It's stored only in this browser (localStorage). Don't paste it on a shared device.</p>
+      <h3>Settings</h3>
 
-      <div class="section-title">1 · Access token (enables saving)</div>
-      <p class="note">Get it from your Supabase SQL editor: <code class="inline">select value from app_secrets where key = 'writer_token';</code> — copy the value and paste it below. (To revoke, rotate that value in Supabase.)</p>
+      <div class="section-title">1 · Access token</div>
+      <p class="note">Needed to save changes. Stored only in this browser — don't paste it on a shared device. Get it from the Supabase SQL editor:<br><code class="inline">select value from app_secrets where key = 'writer_token';</code></p>
       <input type="password" id="svcKey" placeholder="access token${hasKey ? ' (saved)' : ''}" />
       <button class="btn secondary" id="saveKey">Save token</button>
       ${hasKey ? '<button class="btn secondary" id="clearKey">Clear</button>' : ''}
@@ -356,12 +429,12 @@
       <div id="importResult" class="note"></div>
 
       <div class="section-title">3 · Export / backup</div>
-      <p class="note">Download your full list — tools, owned status, and latest best prices — as a spreadsheet or JSON. No token needed.</p>
+      <p class="note">Your list + latest prices. No token needed.</p>
       <button class="btn secondary" id="expCsv">Export CSV</button>
       <button class="btn secondary" id="expJson">Export JSON</button>
 
       <div class="section-title">4 · Refresh prices now</div>
-      <p class="note">Prices refresh automatically twice a day. Use this to run a scrape now — handy right after adding links. Rate-limited to once every 10 minutes.</p>
+      <p class="note">Prices refresh twice a day on their own. This runs one now — max once every 10 minutes.</p>
       <button class="btn" id="runScrape" ${hasKey ? '' : 'disabled'}>Run price scrape now</button>
       <div id="runScrapeMsg" class="note"></div>
     </div>`;
@@ -576,7 +649,8 @@
     const t = toolId ? state.tools.find((x) => String(x.tool_id) === String(toolId)) : null;
     detail.classList.remove('hidden'); detail.setAttribute('aria-hidden', 'false');
     const v = (x) => esc(x ?? '');
-    const cats = uniq(state.tools.map((x) => x.category));
+    // Standard categories are pre-loaded as suggestions; typing a new one still works.
+    const cats = uniq([...CATEGORIES, ...state.tools.map((x) => x.category)]);
     // Priority tier is a fixed 3-way picker (new tools default to Tier 1 — buy
     // first), so a tool always lands in a real buy-order window. An existing tool
     // on some other tier value keeps it as an extra option rather than being
@@ -971,6 +1045,10 @@
   function render() {
     updateStaleBar();
     document.getElementById('dealsCount').textContent = state.tools.filter(isDeal).length || '';
+    // Broken-link count rides on the Health tab, so a failed pass is visible from
+    // anywhere in the app without opening it.
+    const hc = document.getElementById('healthCount');
+    if (hc) hc.textContent = (state.issues || []).length || '';
     (RENDERERS[state.tab] || renderChecklist)();
   }
 

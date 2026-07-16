@@ -93,6 +93,10 @@ body {
 .tab.active { color: #fff; background: var(--ink); border-color: var(--ink); }
 .pill { background: var(--ink); color: #fff; border-radius: 999px; font-size: 11px; padding: 1px 7px; margin-left: 3px; font-weight: 700; }
 .tab.active .pill { background: #fff; color: var(--ink); }
+/* Broken-link count — an alarm, not a tally. Empty = no badge at all. */
+.pill.alert { background: var(--crit); color: #fff; }
+.pill.alert:empty { display: none; }
+.tab.active .pill.alert { background: #fff; color: var(--crit); }
 
 main { max-width: var(--maxw); margin: 0 auto; padding: 16px 14px 48px; }
 .loading { color: var(--muted); text-align: center; padding: 48px 0; }
