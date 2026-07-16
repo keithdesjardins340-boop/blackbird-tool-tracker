@@ -12,7 +12,7 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="dot"></span> Blackbird <span class="muted">Tool Tracker</span>
+      <span class="clock" id="scrapeClock"></span> Blackbird <span class="muted">Tool Tracker</span>
     </div>
     <div class="topbar-actions">
       <button id="addToolBtn" class="icon-btn" title="Add a tool">＋</button>
@@ -24,7 +24,7 @@
     <button data-tab="checklist" class="tab active">Checklist</button>
     <button data-tab="watchlist" class="tab">Prices</button>
     <button data-tab="deals" class="tab">Deals <span id="dealsCount" class="pill"></span></button>
-    <button data-tab="health" class="tab">Health <span id="healthCount" class="pill alert"></span></button>
+    <button data-tab="health" class="tab">Health <span id="healthDot" class="tab-dot"></span><span id="healthCount" class="pill alert"></span></button>
     <button data-tab="import" class="tab">Settings</button>
   </nav>
 

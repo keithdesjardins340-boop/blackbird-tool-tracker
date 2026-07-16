@@ -41,6 +41,57 @@
     try { return JSON.parse(localStorage.getItem('bbt_cache') || 'null'); } catch { return null; }
   }
 
+  // ---- scrape clock (the brand mark) -----------------------------------
+  // The dot beside "Blackbird" is a clock: it empties the moment a scrape runs and
+  // fills as the next scheduled one comes due, so "how fresh are these prices?" is
+  // answerable without opening anything. A manual "Run price scrape now" resets it
+  // too, because it tracks the last ACTUAL run, not just the timetable.
+  const CRON_UTC_HOURS = [1, 13]; // must match .github/workflows/scrape.yml
+
+  function nextScrapeAfter(t) {
+    let best = Infinity;
+    const d = new Date(t);
+    for (const off of [0, 1]) {
+      for (const h of CRON_UTC_HOURS) {
+        const c = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + off, h, 0, 0, 0);
+        if (c > +t && c < best) best = c;
+      }
+    }
+    return new Date(best);
+  }
+  function lastScrapeAt() {
+    const t = (state.health || []).map((d) => d.last_run_at).filter(Boolean).map((s) => +new Date(s));
+    return t.length ? new Date(Math.max(...t)) : null;
+  }
+  const fmtSpan = (ms) => {
+    const m = Math.max(0, Math.round(ms / 60000));
+    return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
+  };
+
+  function renderScrapeClock() {
+    const el = document.getElementById('scrapeClock');
+    if (!el) return;
+    const now = new Date();
+    const last = lastScrapeAt();
+    const next = nextScrapeAfter(now);
+    // Fill = how far through the gap between the last real run and the next due one.
+    let frac = 0;
+    if (last) {
+      const span = +next - +last;
+      frac = span > 0 ? Math.min(1, Math.max(0, (+now - +last) / span)) : 1;
+    }
+    const R = 6, C = 2 * Math.PI * R;
+    el.innerHTML = `<svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="8" r="${R}" fill="none" stroke="var(--line-2)" stroke-width="2.5"/>
+      <circle cx="8" cy="8" r="${R}" fill="none" stroke="var(--ink)" stroke-width="2.5"
+        stroke-linecap="round" transform="rotate(-90 8 8)"
+        stroke-dasharray="${(frac * C).toFixed(2)} ${C.toFixed(2)}"/>
+    </svg>`;
+    el.title = last
+      ? `Last scrape ${fmtSpan(now - last)} ago · next in ${fmtSpan(next - now)}`
+      : `No scrape yet · next in ${fmtSpan(next - now)}`;
+  }
+
   // ---- scraper issues (the "go fix this link" alert) --------------------
   // run.js logs every failure as {listing_id,url,error} into scrape_runs.error_log
   // (plus `deactivated` when a 404/410 killed the link), and dealer_health exposes
@@ -506,7 +557,7 @@
       let snaps = [];
       if (ids.length) {
         snaps = await SB.select('price_snapshots',
-          `select=listing_id,price_cad,regular_price_cad,on_sale,in_stock,scraped_at,currency,price_original,fx_rate&listing_id=in.(${ids.join(',')})&order=scraped_at.asc`) || [];
+          `select=listing_id,price_cad,regular_price_cad,on_sale,in_stock,scraped_at,currency,price_original,fx_rate,is_anomaly&listing_id=in.(${ids.join(',')})&order=scraped_at.asc`) || [];
       }
       const byListing = {};
       for (const s of snaps) (byListing[s.listing_id] ||= []).push(s);
@@ -525,19 +576,34 @@
       // the ✕ would look broken, and worse, a removed link could still win BEST.
       const live = (listings || []).filter((l) => l.active);
 
+      // Price history belongs to the DEALER, not the URL. Dealers rotate product
+      // URLs (or block the old one), and the fix is to paste the new link — so the
+      // line has to carry on rather than restart. We therefore merge every listing
+      // this dealer has ever had for this tool, including replaced/removed ones,
+      // into one series. Dealers with no live link at all are dropped (that's a
+      // dealer you stopped tracking, not a URL change), and known-bad reads are
+      // left out — a flagged $135 add-on is a parser mistake, not price history.
+      const liveDealerIds = new Set(live.map((l) => l.dealer_id));
+      const byDealer = new Map();
+      for (const l of listings || []) {
+        if (!liveDealerIds.has(l.dealer_id)) continue;
+        const e = byDealer.get(l.dealer_id)
+          || { dealer_id: l.dealer_id, label: l.dealer?.name || `Dealer ${l.dealer_id}`, points: [] };
+        for (const s of byListing[l.id] || []) {
+          if (s.is_anomaly) continue;
+          e.points.push({ t: s.scraped_at, price: Number(s.price_cad) });
+        }
+        byDealer.set(l.dealer_id, e);
+      }
       // Colour/dash are keyed to the DEALER, so a dealer keeps its colour as links
       // are added or removed — the legend and the line always agree.
-      const slots = Charts.assignSlots(live.map((l) => l.dealer_id));
-      const series = live.map((l) => {
-        const slot = slots.get(l.dealer_id) ?? 0;
-        return {
-          label: l.dealer?.name || `Listing ${l.id}`,
-          listingId: l.id,
-          color: Charts.colorAt(slot),
-          dash: Charts.dashAt(slot),
-          points: (byListing[l.id] || []).map((s) => ({ t: s.scraped_at, price: Number(s.price_cad) })),
-        };
-      });
+      const slots = Charts.assignSlots([...byDealer.keys()]);
+      const series = [...byDealer.values()].map((e) => ({
+        label: e.label,
+        color: Charts.colorAt(slots.get(e.dealer_id) ?? 0),
+        dash: Charts.dashAt(slots.get(e.dealer_id) ?? 0),
+        points: e.points.sort((a, b) => +new Date(a.t) - +new Date(b.t)),
+      }));
 
       const chart = Charts.lineChart(series);
       const legend = series.map((s) =>
@@ -1055,11 +1121,15 @@
   }
   function render() {
     updateStaleBar();
+    renderScrapeClock();
     document.getElementById('dealsCount').textContent = state.tools.filter(isDeal).length || '';
-    // Broken-link count rides on the Health tab, so a failed pass is visible from
-    // anywhere in the app without opening it.
+    // Health rides on its tab, so a failed pass is visible from anywhere: a green
+    // dot means every link priced, red + a count means something needs a new link.
+    const n = (state.issues || []).length;
     const hc = document.getElementById('healthCount');
-    if (hc) hc.textContent = (state.issues || []).length || '';
+    if (hc) hc.textContent = n || '';
+    const hd = document.getElementById('healthDot');
+    if (hd) hd.classList.toggle('bad', n > 0);
     (RENDERERS[state.tab] || renderChecklist)();
   }
 
@@ -1112,5 +1182,6 @@
   window.addEventListener('online', () => { if (state.offline) loadAll(); });
   // Bookmarklet capture: handle a #import= payload on boot and on later changes.
   window.addEventListener('hashchange', handleImportHash);
+  setInterval(renderScrapeClock, 60000); // the clock has to keep moving on its own
   loadAll().catch(() => {}).then(handleImportHash); // don't drop a capture if refresh hiccups
 })();

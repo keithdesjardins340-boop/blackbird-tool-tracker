@@ -58,7 +58,9 @@ body {
   border-bottom: 1px solid var(--line);
 }
 .brand { font-weight: 700; letter-spacing: -.2px; display: flex; align-items: center; gap: 9px; font-size: 16px; }
-.brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ink); }
+/* The brand mark is the scrape clock: empty right after a run, full as the next
+   one comes due. Hover it for exact times. */
+.brand .clock { display: inline-flex; align-items: center; cursor: default; }
 .topbar-actions { display: flex; gap: 8px; }
 
 /* Offline / stale-data bar + update toast */
@@ -97,6 +99,11 @@ body {
 .pill.alert { background: var(--crit); color: #fff; }
 .pill.alert:empty { display: none; }
 .tab.active .pill.alert { background: #fff; color: var(--crit); }
+/* Health at a glance: green = every link priced, red = something needs a new link. */
+.tab-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+  margin-left: 5px; vertical-align: middle; background: var(--good); }
+.tab-dot.bad { background: var(--crit); }
+.tab.active .tab-dot { box-shadow: 0 0 0 1.5px #fff; }
 
 main { max-width: var(--maxw); margin: 0 auto; padding: 16px 14px 48px; }
 .loading { color: var(--muted); text-align: center; padding: 48px 0; }
