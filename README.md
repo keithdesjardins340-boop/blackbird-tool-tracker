@@ -85,16 +85,22 @@ The PAT lives only in the function's secrets — it's never returned by any
 operation, stored in the browser, or committed. To revoke, delete the token on
 GitHub or remove the `GH_PAT` secret.
 
-## Resetting to a clean tool list (owner-run)
+## Resetting to a clean tool list
 
-The app is moving to a **manual-first** model: you curate your own tool list and
-paste the dealer links; the scrapers only refresh prices on links you gave them.
-To start that list from scratch, do this yourself in the Supabase SQL editor —
-**Claude never runs the reset.**
+The app is **manual-first**: you curate your own tool list and paste the dealer
+links; the scrapers only refresh prices on links you gave them. To start that list
+from scratch:
+
+**An assistant may run this reset on request** — but only after taking and
+**verifying a full backup** (that precondition is not optional; it's what makes the
+wipe recoverable). Note that a platform safety guard may still refuse an automated
+mass-delete regardless of this document; if it does, run the SQL yourself in the
+Supabase SQL editor.
 
 1. **Back up first.** Dashboard → Settings → **Export CSV** *and* **Export JSON**
-   (tools, owned flags, and prices). Save the files off-repo (Drive/local). The
-   repo is public, so don't commit them unless you mean to.
+   (tools, owned flags, and prices) — or dump every table to JSON. Save it off-repo
+   (Drive/local); the repo is public, so don't commit it unless you mean to.
+   Verify the row counts match the database before wiping.
 2. **Wipe**, in the Supabase SQL editor (same place the writer token lives):
    ```sql
    truncate table price_snapshots, map_candidates, tool_listings, tools

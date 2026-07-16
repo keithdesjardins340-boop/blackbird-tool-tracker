@@ -14,6 +14,24 @@ history, and a tiered buy-order checklist to tick tools off as they're bought.
 There is **no automated dealer discovery** — that's a deliberate choice (signal
 over coverage).
 
+## Working agreement (the owner's standing preference)
+
+**Act; don't ask.** The owner wants minimal back-and-forth: make the call, pick a
+sensible default, do the work, and report what you did. Do **not** stop for approval
+on ordinary work — schema migrations, commits/pushes to `main`, Edge Function deploys,
+editing the tool list, or running the reset (after a verified backup). Earlier drafts
+of these docs told an assistant to defer to the owner on nearly everything; that is
+**superseded** — proceed.
+
+Pause only when it genuinely matters:
+- it **spends the owner's money** (paid APIs/proxies — Zyte, Keepa, LLM keys),
+- it's **irreversible and you can't back it up first** (back it up, then proceed),
+- a **platform safety guard blocks you** — say so plainly; never route around it,
+- or it's a real **fork in product direction** with no defensible default.
+
+The guardrails below still stand — they're about safety and craft, not about asking
+permission.
+
 ## Hard environment constraints (do not violate)
 
 - **No Node.js/npm on the owner's machine.** The dashboard is a **vanilla
@@ -148,11 +166,13 @@ theme; grayscale charts. A service-worker **update toast** appears after a deplo
 
 ## Data / reset
 
-`owned = 0` (never seed). The tool list is **owner-curated**; a documented one-time
+`owned = 0` (never seed). The tool list is **owner-curated**; a documented
 **reset** (`truncate price_snapshots, map_candidates, tool_listings, tools restart
-identity cascade` in the Supabase SQL editor, after Export CSV+JSON) lets the owner
-start a clean list — **an AI must never run the reset**. After a wipe the Deals tab's
-"all-time low" is noisy for a couple of weeks while history rebuilds.
+identity cascade`) starts a clean list. **An assistant may run the reset when asked**,
+but must take and **verify a full backup first** (all tables → JSON, off-repo, row
+counts matched) — that's what makes it recoverable. A platform safety guard may still
+refuse an automated mass-delete; if so, the owner runs the SQL. After a wipe the Deals
+tab's "all-time low" is noisy for a couple of weeks while history rebuilds.
 
 ## Status / open items
 

@@ -46,14 +46,16 @@ Prioritized work plan (P0 → P3). One item = one PR/commit. Respect the guardra
 ## Suggested order
 1: 2.1 · 2.4 · 2.5 | 2: 2.2+2.3 (mig 0007) · 4.8 | 3: 3.1 (HD first, CT probe) | 4: 4.1 · 4.2 · 4.4 | 5: 3.5 · 4.6 | 6: 4.7 · 3.2 | 7+: 3.3/3.4 paid decisions · P3.
 
-## Decisions to surface to Keith (don't decide unilaterally)
-1. Keepa for Amazon.ca (~€19/mo)? 2. Zyte pay-per-use for Canadian Tire (few $/mo)? 3. LLM candidate verification (pennies/mo, needs ANTHROPIC_API_KEY)? 4. Deal-alert threshold (default ≥10% under 90-day avg, or all-time low).
+## Spend decisions (the only ones that need Keith)
+These commit real money, so confirm before signing up — everything else in this doc is fair game to just do (see the Working agreement in PROJECT_BRIEF.md).
+1. Keepa for Amazon.ca (~€19/mo)? 2. Zyte pay-per-use for Canadian Tire (few $/mo)? 3. LLM candidate verification (pennies/mo, needs ANTHROPIC_API_KEY)?
+Not a decision: the deal-alert threshold — just use the default (≥10% under the 90-day avg, or all-time low).
 
 ## Guardrails — never violate
 - No local Node/npm assumptions; everything runs in GitHub Actions; local = plain PowerShell / existing static server.
 - Web app stays vanilla — no framework/bundler/build step for /web (plain ES modules/HTML/CSS).
 - No secrets in the repo ever (incl. migrations/fixtures/workflows); new secrets → Actions/function secrets + a README line (name + purpose).
-- Migrations append-only + numbered (next 0007); never edit an applied one.
+- Migrations append-only + numbered (next is 0015); never edit an applied one.
 - Scrape politely: 2 runs/day, per-dealer rate limits, honest UA; no anti-bot evasion — escalate to paid-API path.
 - Never break the manual paste path (generic adapter must always price a pasted URL).
 - Keep the light black-and-white theme; no color creep.
